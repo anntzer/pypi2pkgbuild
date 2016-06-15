@@ -14,11 +14,13 @@ Improvements over pip2arch
 --------------------------
 
 - Supports wheels (if both a sdist and a wheel is available, prefer the former,
-  except if `-w` is passed).
-- Resolves dependencies via installation in a temporary virtualenv.
+  except if `--prefer-wheel` is passed).
+- Resolves dependencies via installation in a temporary virtualenv, and also
+  creates PKGBUILDs for those that are not available as official packages.
 - Automatically tries to fetch a missing license file from Github, if
   applicable.
-- Automatically builds the package and run `namcap`.
+- Automatically builds the package (with options given in `--makepkg=...`) and
+  run `namcap`.
 
 The goal is to make this tool as automated as possible: if all the information
 to build a package is (reasonably) accessible, this tool should be able to
@@ -27,7 +29,9 @@ build it.
 In order to provide additional information to `makepkg`, edit
 `PKGBUILD_EXTRAS`, which is sourced at the *end* of `PKGBUILD`.
 
-Supported Python versions
--------------------------
+Dependencies
+------------
 
-Python 3.5+.  Nothing else.
+- Python 3.5+
+- `pkgfile` (to check which dependencies are already available as official
+  packages)

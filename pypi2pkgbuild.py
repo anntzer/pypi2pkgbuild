@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import namedtuple, OrderedDict
-from functools import partial
+from functools import lru_cache, partial
 import hashlib
 from io import StringIO
+import json
 import logging
 from pathlib import Path
 import re
@@ -14,14 +15,13 @@ from subprocess import PIPE
 import sys
 from tempfile import TemporaryDirectory
 import urllib.request
-from xmlrpc.client import ServerProxy
 
 
 LOGGER = logging.getLogger(Path(__file__).stem)
 
 PY_TAGS = ["py2.py3",
-           "py{}".format(sys.version_info.major),
-           "cp{}{}".format(sys.version_info.major, sys.version_info.minor)]
+           "py{0.major}".format(sys.version_info),
+           "cp{0.major}{0.minor}".format(sys.version_info)]
 PLATFORM_TAGS = {
     "any": "any", "manylinux1_i686": "i686", "manylinux1_x86_64": "x86_64"}
 SDIST_SUFFIXES = [".tar.gz", ".tar.bz2", ".zip"]
@@ -205,31 +205,31 @@ class NoPackageError(Exception):
     pass
 
 
+@lru_cache()
+def _pypi_request(name):
+    try:
+        r = urllib.request.urlopen(
+            "https://pypi.python.org/pypi/{}/json".format(name))
+    except urllib.error.HTTPError:
+        raise NoPackageError("Package {!r} not found.".format(name))
+    return json.loads(r.read().decode(r.headers.get_param("charset")))
+
+
 class Package:
     def __init__(self, name, info, prefer_wheel=False):
         stream = StringIO()
         self._files = OrderedDict()
 
-        client = ServerProxy("http://pypi.python.org/pypi")
-        versions = client.package_releases(name)
-        if not versions:
-            # Slower, but with casefolding.
-            search = client.search({"name": name})
-            try:
-                name, = {d["name"] for d in search
-                         if d["name"].lower() == name.lower()}
-            except ValueError:
-                raise NoPackageError("Package {!r} not found.".format(name))
-            versions = client.package_releases(name)
-
-        self._name = name
-        self._version = version = versions[0]
+        response = _pypi_request(name)
+        self._data = response["info"]
+        self._name = name = self._data["name"]  # Normalized.
+        self._version = version = self._data["version"]
 
         LOGGER.info("Packaging %s %s", name, version)
         suffix_prefs = ([WHEEL_SUFFIX, *SDIST_SUFFIXES] if prefer_wheel
                         else [*SDIST_SUFFIXES, WHEEL_SUFFIX])
         urls = sorted(
-            self._filter_urls(client.release_urls(name, version)),
+            self._filter_urls(response["urls"]),
             key=lambda url: next(i for i, suffix in enumerate(suffix_prefs)
                                  if url["path"].endswith(suffix)))
         if not urls:
@@ -239,7 +239,6 @@ class Package:
         self._urls = [
             url for url in urls
             if Path(url["path"]).suffix == Path(urls[0]["path"]).suffix]
-        self._data = client.release_data(name, version)
 
         self._find_arch_makedepends_depends()
         self._find_license()
@@ -306,15 +305,18 @@ class Package:
         # Dependency resolution is done by installing the package in a venv
         # and calling `pip show`; otherwise it would be necessary to parse
         # environment markers (from `self._data["requires_dist"]`).
+        # The package name may get denormalized ("_" -> "-") during installation
+        # so we just look at whatever got installed.
         with TemporaryDirectory() as venvdir:
-            script = ("""\
+            script = (r"""
                 pyvenv {venvdir}
                 . {venvdir}/bin/activate
                 pip --isolated install --upgrade pip >/dev/null
                 {install_cython}
-                pip --isolated install --no-deps {self._name} \\
+                pip --isolated install --no-deps {self._name} \
                     >/dev/null
-                python -mpip show {self._name} | grep -Po '(?<=^Requires: ).*'
+                pip show "$(pip freeze | cut -d= -f1 | grep -v '^Cython$')" \
+                    | grep -Po '(?<=^Requires: ).*'
             """.format(
                 self=self,
                 venvdir=venvdir,
@@ -322,9 +324,10 @@ class Package:
                                 if "cython" in self._makedepends
                                 else "")))
             process = _run_shell(["sh"], input=script, stdout=PIPE)
-        self._depends = (
-            ["python-{}".format(depend)  # Strip newline.
-             for depend in filter(None, process.stdout[:-1].split(", "))]
+        self._depends = (  # Normalize names.
+            ["python-{}".format(_pypi_request(depend)["info"]["name"])
+             for depend in filter(
+                     None, process.stdout[:-1].split(", "))]  # Strip newline.
             or ["python"]) # In case there are no other dependencies.
 
     def _find_license(self):
@@ -347,7 +350,7 @@ class Package:
 
         if self._license not in TROVE_COMMON_LICENSES:
             url, subbed = re.subn(
-                r"https?://github\.com",
+                r"https?://(www\.)?github\.com",
                 "https://raw.githubusercontent.com",
                 self._data["download_url"] or self._data["home_page"],
                 1)
@@ -385,13 +388,28 @@ def get_config():
         mini_pkgbuild = ('pkgver=0\npkgrel=0\narch=(any)\n'
                          'prepare() { echo "$PACKAGER"; exit 0; }')
         Path(tmpdir, "PKGBUILD").write_text(mini_pkgbuild)
-        maintainer = _run_shell(  # Strip newline.
-            "makepkg", cwd=tmpdir, stdout=PIPE, stderr=PIPE).stdout[:-1]
+        maintainer = (
+            _run_shell("makepkg", cwd=tmpdir, stdout=PIPE, stderr=PIPE).
+            stdout[:-1])  # Strip newline.
     return {"maintainer": maintainer}
 
 
-def main(name, force=False, prefer_wheel=False, makepkg=""):
+def main(name,
+         force=False, prefer_wheel=False, makepkg="--cleanbuild --nodeps"):
+
     package = Package(name, get_config(), prefer_wheel=prefer_wheel)
+
+    for dep in package.depends.split():
+        if not dep.startswith("python-"):
+            continue
+        dep = dep[len("python-"):]
+        process = subprocess.run(
+            ["pkgfile", "-r", r"/{0}-.*py{1.major}.{1.minor}\.egg-info".format(
+                dep, sys.version_info)], stdout=PIPE)
+        if process.returncode:
+            # Dependency not found, build it too.
+            main(dep, force=force, prefer_wheel=prefer_wheel, makepkg=makepkg)
+
     cwd = package.pkgname
     Path(cwd).mkdir(parents=True, exist_ok=force)
     _run_shell("git init .", cwd=cwd)
@@ -401,8 +419,8 @@ def main(name, force=False, prefer_wheel=False, makepkg=""):
     for fname, content in package.get_files().items():
         Path(cwd, fname).write_bytes(content)
     _run_shell("mksrcinfo", cwd=cwd)
-    cmd = ["makepkg", "-c", "-d",
-           *(["-f"] if force else []),
+    cmd = ["makepkg",
+           *(["--force"] if force else []),
            *shlex.split(makepkg)]
     subprocess.run(cmd, check=True, cwd=cwd)
     _run_shell("namcap PKGBUILD", cwd=cwd)
@@ -410,19 +428,25 @@ def main(name, force=False, prefer_wheel=False, makepkg=""):
               stdout.splitlines())
     for fname in fnames:
         for fullname in Path(cwd).glob(fname + ".*"):
-            _run_shell("namcap {}".format(fullname.name), cwd=cwd)
+            # Python dependencies always get misanalyzed so we just filter them
+            # away; how to do this via a switch to namcap is not so clear.
+            _run_shell(
+                "namcap {} | grep -v 'W: Dependency included and not needed' "
+                "|| true".format(fullname.name),
+                cwd=cwd)
 
 
 if __name__ == "__main__":
     logging.basicConfig(level="INFO")
     parser = ArgumentParser(
-        description="Create a PKGBUILD for a PyPI package and run makepkg.")
+        description="Create a PKGBUILD for a PyPI package and run makepkg.",
+        formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("name", help="The PyPI package name.")
     parser.add_argument("-f", "--force", action="store_true",
                         help="Overwrite a previously existing PKGBUILD.")
     parser.add_argument("-w", "--prefer-wheel", action="store_true",
                         help="Prefer wheels to sdists.")
-    parser.add_argument("-m", "--makepkg", default="",
+    parser.add_argument("-m", "--makepkg", default="--cleanbuild --nodeps",
                         help="Additional arguments to pass to makepkg.")
     args = parser.parse_args()
     try:
