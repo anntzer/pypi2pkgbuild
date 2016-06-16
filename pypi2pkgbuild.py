@@ -91,7 +91,7 @@ pkgver={pkg.pkgver}
 pkgrel=0
 pkgdesc={pkg.pkgdesc}
 url={pkg.url}
-depends=({pkg.depends})
+depends=(python {pkg.depends})
 makedepends=({pkg.makedepends})
 checkdepends=({pkg.checkdepends})
 license=({pkg.license})
@@ -224,17 +224,44 @@ def _as_arch_name(pypi_name):
         return "python-{}".format(pypi_name.lower())
 
 
+class PackageRef:
+    def __init__(self, name):
+        # Name on PyPI.
+        self.pypi_name = _pypi_request(name)["info"]["name"]
+        # Name for wheels.
+        self.wheel_name = self.pypi_name.replace("-", "_")
+        # Name for Arch Linux.
+        process = subprocess.run(
+            ["pkgfile", "-rq", r"/{0}-.*py{1.major}.{1.minor}\.egg-info".format(
+                self.pypi_name, sys.version_info)],
+            stdout=PIPE, universal_newlines=True)
+        if process.returncode:
+            self.pkgname = "python-{}".format(self.pypi_name)
+            self.exists = False
+        else:
+            self.pkgname = process.stdout[:-1]  # Strip newline.
+            self.exists = True
+
+
+class PackageRefList(list):
+    def __format__(self, fmt):
+        if fmt == "":
+            return " ".join(ref.pkgname for ref in self)
+        return super().__format__(fmt)  # Raise TypeError.
+
+
 class Package:
     def __init__(self, name, info, prefer_wheel=False):
         stream = StringIO()
         self._files = OrderedDict()
 
+        self._ref = PackageRef(name)
+
         response = _pypi_request(name)
         self._data = response["info"]
-        self._name = name = self._data["name"]  # Normalized.
         self._version = version = self._data["version"]
 
-        LOGGER.info("Packaging %s %s", name, version)
+        LOGGER.info("Packaging %s %s", self.pkgname, version)
         suffix_prefs = ([WHEEL_SUFFIX, *SDIST_SUFFIXES] if prefer_wheel
                         else [*SDIST_SUFFIXES, WHEEL_SUFFIX])
         urls = sorted(
@@ -243,7 +270,7 @@ class Package:
                                  if url["path"].endswith(suffix)))
         if not urls:
             raise NoPackageError(
-                "No URL available for package {!r}.".format(self._name))
+                "No URL available for package {!r}.".format(self.pkgname))
         # Expected to be either a single sdist, or a bunch of wheels.
         self._urls = [
             url for url in urls
@@ -280,7 +307,7 @@ class Package:
         for url in urls:
             if url["path"].endswith(WHEEL_SUFFIX):
                 wheel_info = parse_wheel(url["path"])
-                assert (wheel_info.name == self._name.replace("-", "_")
+                assert (wheel_info.name == self._ref.wheel_name
                         and wheel_info.version == self._version)
                 if (wheel_info.py not in PY_TAGS
                         or wheel_info.platform not in PLATFORM_TAGS):
@@ -296,7 +323,8 @@ class Package:
 
     def _find_arch_makedepends_depends(self):
         self._arch = ["any"]
-        self._makedepends = ["python-pip"]
+        self._makedepends = PackageRefList([PackageRef("pip")])
+        makedepends_cython = False
         with TemporaryDirectory() as tmpdir:
             if self._urls[0]["path"].endswith(WHEEL_SUFFIX):
                 self._arch = sorted(
@@ -309,7 +337,8 @@ class Package:
                 shutil.unpack_archive(str(tmppath), tmpdir)
                 if list(Path(tmpdir).glob("**/*.pyx")):
                     self._arch = ["i686", "x86_64"]
-                    self._makedepends += ["cython"]
+                    self._makedepends.append(PackageRef("cython"))
+                    makedepends_cython = True
                 if list(Path(tmpdir).glob("**/*.c")):
                     self._arch = ["i686", "x86_64"]
 
@@ -324,7 +353,7 @@ class Package:
                 . {venvdir}/bin/activate
                 pip --isolated install --upgrade pip >/dev/null
                 {install_cython}
-                pip --isolated install --no-deps {self._name} \
+                pip --isolated install --no-deps {self._ref.pypi_name} \
                     >/dev/null
                 pip show "$(pip freeze | cut -d= -f1 | grep -v '^Cython$')" \
                     | grep -Po '(?<=^Requires: ).*'
@@ -332,14 +361,13 @@ class Package:
                 self=self,
                 venvdir=venvdir,
                 install_cython=("pip --isolated install cython >/dev/null"
-                                if "cython" in self._makedepends
+                                if makedepends_cython
                                 else "")))
             process = _run_shell(["sh"], input=script, stdout=PIPE)
-        self._depends = (  # Normalize names.
-            [_as_arch_name(_pypi_request(depend)["info"]["name"])
-             for depend in filter(
-                     None, process.stdout[:-1].split(", "))]  # Strip newline.
-            or ["python"]) # In case there are no other dependencies.
+        self._depends = PackageRefList(  # Normalize names.
+            PackageRef(depend)
+            for depend in filter(
+                    None, process.stdout[:-1].split(", ")))  # Strip newline.
 
     def _find_license(self):
         license_classes = [
@@ -382,13 +410,13 @@ class Package:
             else:
                 LOGGER.warning("Could not retrieve license file")
 
-    pkgname = property(lambda self: _as_arch_name(self._name))
+    pkgname = property(lambda self: self._ref.pkgname)
     pkgver = property(lambda self: shlex.quote(self._version))
     pkgdesc = property(lambda self: shlex.quote(self._data["summary"]))
     url = property(lambda self: shlex.quote(self._data["home_page"]))
-    depends = property(lambda self: " ".join(self._depends))
-    makedepends = property(lambda self: " ".join(self._makedepends))
-    checkdepends = property(lambda self: "")
+    depends = property(lambda self: self._depends)
+    makedepends = property(lambda self: self._makedepends)
+    checkdepends = property(lambda self: PackageRefList())
     license = property(lambda self: shlex.quote(self._license))
     arch = property(lambda self: " ".join(self._arch))
 
@@ -415,17 +443,11 @@ def main(name,
 
     package = Package(name, get_config(), prefer_wheel=prefer_wheel)
 
-    for dep in package.depends.split():
-        if not dep.startswith("python-"):
-            continue
-        dep = dep[len("python-"):]
-        process = subprocess.run(
-            ["pkgfile", "-r", r"/{0}-.*py{1.major}.{1.minor}\.egg-info".format(
-                _pypi_request(dep)["info"]["name"], sys.version_info)],
-            stdout=PIPE)
-        if process.returncode:
+    for ref in package._depends:
+        if not ref.exists:
             # Dependency not found, build it too.
-            main(dep, force=force, prefer_wheel=prefer_wheel, makepkg=makepkg)
+            main(ref.pypi_name,
+                 force=force, prefer_wheel=prefer_wheel, makepkg=makepkg)
 
     cwd = package.pkgname
     Path(cwd).mkdir(parents=True, exist_ok=force)
