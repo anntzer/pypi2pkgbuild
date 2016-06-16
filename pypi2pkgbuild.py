@@ -26,7 +26,8 @@ PLATFORM_TAGS = {
     "any": "any", "manylinux1_i686": "i686", "manylinux1_x86_64": "x86_64"}
 SDIST_SUFFIXES = [".tar.gz", ".tar.bz2", ".zip"]
 WHEEL_SUFFIX = ".whl"
-LICENSE_NAMES = ["LICENSE", "LICENSE.txt", "COPYING.rst"]
+OTHER_SUFFIXES = [".egg", ".exe"]
+LICENSE_NAMES = ["LICENSE", "LICENSE.txt", "COPYING.rst", "COPYING.txt"]
 TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
     "GNU Affero General Public License v3":
         "AGPL3",
@@ -87,7 +88,7 @@ PKGBUILD_HEADER = """\
 
 pkgname={pkg.pkgname}
 pkgver={pkg.pkgver}
-pkgrel=1
+pkgrel=0
 pkgdesc={pkg.pkgdesc}
 url={pkg.url}
 depends=({pkg.depends})
@@ -215,6 +216,14 @@ def _pypi_request(name):
     return json.loads(r.read().decode(r.headers.get_param("charset")))
 
 
+def _as_arch_name(pypi_name):
+    # Handle special cases.
+    if pypi_name in ["ipython", "yapf"]:
+        return pypi_name.lower()
+    else:
+        return "python-{}".format(pypi_name.lower())
+
+
 class Package:
     def __init__(self, name, info, prefer_wheel=False):
         stream = StringIO()
@@ -279,6 +288,8 @@ class Package:
                 yield url
             elif url["path"].endswith(tuple(SDIST_SUFFIXES)):
                 yield url
+            elif url["path"].endswith(tuple(OTHER_SUFFIXES)):
+                pass
             else:
                 LOGGER.warning("Skipping unknown suffix: %s",
                                Path(url["path"]).name)
@@ -325,7 +336,7 @@ class Package:
                                 else "")))
             process = _run_shell(["sh"], input=script, stdout=PIPE)
         self._depends = (  # Normalize names.
-            ["python-{}".format(_pypi_request(depend)["info"]["name"])
+            [_as_arch_name(_pypi_request(depend)["info"]["name"])
              for depend in filter(
                      None, process.stdout[:-1].split(", "))]  # Strip newline.
             or ["python"]) # In case there are no other dependencies.
@@ -348,25 +359,30 @@ class Package:
         else:
             raise ValueError("No license information available")
 
+        _license_found = False
         if self._license not in TROVE_COMMON_LICENSES:
-            url, subbed = re.subn(
-                r"https?://(www\.)?github\.com",
-                "https://raw.githubusercontent.com",
-                self._data["download_url"] or self._data["home_page"],
-                1)
-            if subbed:
-                for license_name in LICENSE_NAMES:
-                    try:
-                        r = urllib.request.urlopen(
-                            url + "/master/" + license_name)
-                    except urllib.error.HTTPError:
-                        pass
-                    else:
-                        self._files.update(LICENSE=r.read())
+            for url in filter(None, [self._data["download_url"],
+                                     self._data["home_page"]]):
+                url, subbed = re.subn(r"https?://(www\.)?github\.com",
+                                      "https://raw.githubusercontent.com",
+                                      url, 1)
+                if subbed:
+                    for license_name in LICENSE_NAMES:
+                        try:
+                            r = urllib.request.urlopen(
+                                url + "/master/" + license_name)
+                        except urllib.error.HTTPError:
+                            pass
+                        else:
+                            self._files.update(LICENSE=r.read())
+                            _license_found = True
+                            break
+                if _license_found:
+                    break
             else:
                 LOGGER.warning("Could not retrieve license file")
 
-    pkgname = property(lambda self: "python-{self._name}".format(self=self))
+    pkgname = property(lambda self: _as_arch_name(self._name))
     pkgver = property(lambda self: shlex.quote(self._version))
     pkgdesc = property(lambda self: shlex.quote(self._data["summary"]))
     url = property(lambda self: shlex.quote(self._data["home_page"]))
@@ -405,7 +421,8 @@ def main(name,
         dep = dep[len("python-"):]
         process = subprocess.run(
             ["pkgfile", "-r", r"/{0}-.*py{1.major}.{1.minor}\.egg-info".format(
-                dep, sys.version_info)], stdout=PIPE)
+                _pypi_request(dep)["info"]["name"], sys.version_info)],
+            stdout=PIPE)
         if process.returncode:
             # Dependency not found, build it too.
             main(dep, force=force, prefer_wheel=prefer_wheel, makepkg=makepkg)
