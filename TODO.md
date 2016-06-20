@@ -14,9 +14,9 @@ extra_requires
 licensing
 ---------
 
-- bibtex-pygments-lexer: no license info except on github
 - dill: no classifier, license in sdist (3-BSD)
 - hmmlearn: invalid classifier (BSD)
+- jupyter_qtconsole_colorschemes: no classifier, no license field
 - nbstripout: classifier used as license (MIT)
 - profilehooks: need scraping to find link to github (MIT)
 - versioneer: no classifier (public domain)
@@ -24,7 +24,7 @@ licensing
 others
 ------
 
-- jupyter_qtconsole_colorschemes: download from bitbucket (.../raw/master/...) (also, parse URLs for both github and bitbucket)
 - statprof-smarkets: confusing tgz from bdist_dumb
-- pygments-markdown-lexer: bad wheel (data files)
+
+- gatspy: does not declare dependencies
 - nitime: does not declare dependencies

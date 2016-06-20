@@ -7,7 +7,6 @@ from io import StringIO
 import json
 import logging
 from pathlib import Path
-import re
 import shlex
 import shutil
 import subprocess
@@ -388,26 +387,32 @@ class Package:
         elif self._data["license"] not in [None, "UNKNOWN"]:
             self._license = self._data["license"]
         else:
-            raise ValueError("No license information available")
+            LOGGER.warning("No license information available")
+            self._license = "UNKNOWN"
 
         _license_found = False
         if self._license not in TROVE_COMMON_LICENSES:
-            for url in filter(None, [self._data["download_url"],
-                                     self._data["home_page"]]):
-                url, subbed = re.subn(r"https?://(www\.)?github\.com",
-                                      "https://raw.githubusercontent.com",
-                                      url, 1)
-                if subbed:
-                    for license_name in LICENSE_NAMES:
-                        try:
-                            r = urllib.request.urlopen(
-                                url + "/master/" + license_name)
-                        except urllib.error.HTTPError:
-                            pass
-                        else:
-                            self._files.update(LICENSE=r.read())
-                            _license_found = True
-                            break
+            for url in [self._data["download_url"], self._data["home_page"]]:
+                parse = urllib.parse.urlparse(url)
+                if len(Path(parse.path).parts) != 3:  # ["/", user, name]
+                    continue
+                if parse.netloc in ["github.com", "www.github.com"]:
+                    url = urllib.parse.urlunparse(parse._replace(
+                        netloc="raw.githubusercontent.com"))
+                elif parse.netloc in ["bitbucket.org", "www.bitbucket.org"]:
+                    url += "/raw"
+                else:
+                    continue
+                for license_name in LICENSE_NAMES:
+                    try:
+                        r = urllib.request.urlopen(
+                            url + "/master/" + license_name)
+                    except urllib.error.HTTPError:
+                        pass
+                    else:
+                        self._files.update(LICENSE=r.read())
+                        _license_found = True
+                        break
                 if _license_found:
                     break
             else:
@@ -442,15 +447,19 @@ def get_config():
 
 
 def main(name,
-         force=False, prefer_wheel=False, makepkg="--cleanbuild --nodeps"):
+         force=False,
+         prefer_wheel=False,
+         skipdeps=False,
+         makepkg="--cleanbuild --nodeps"):
 
     package = Package(name, get_config(), prefer_wheel=prefer_wheel)
 
-    for ref in package._depends:
-        if not ref.exists:
-            # Dependency not found, build it too.
-            main(ref.pypi_name,
-                 force=force, prefer_wheel=prefer_wheel, makepkg=makepkg)
+    if not skipdeps:
+        for ref in package._depends:
+            if not ref.exists:
+                # Dependency not found, build it too.
+                main(ref.pypi_name,
+                     force=force, prefer_wheel=prefer_wheel, makepkg=makepkg)
 
     cwd = package.pkgname
     Path(cwd).mkdir(parents=True, exist_ok=force)
@@ -488,6 +497,8 @@ if __name__ == "__main__":
                         help="Overwrite a previously existing PKGBUILD.")
     parser.add_argument("-w", "--prefer-wheel", action="store_true",
                         help="Prefer wheels to sdists.")
+    parser.add_argument("-s", "--skipdeps", action="store_true",
+                        help="Don't generate PKGBUILD for dependencies.")
     parser.add_argument("-m", "--makepkg", default="--cleanbuild --nodeps",
                         help="Additional arguments to pass to makepkg.")
     args = parser.parse_args()
