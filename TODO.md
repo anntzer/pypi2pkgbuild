@@ -1,8 +1,3 @@
-Features
-========
-
-- Update depends based on namcap's dependency-detected-not-included.
-
 Failing builds
 ==============
 
@@ -26,3 +21,4 @@ others
 
 - gatspy: does not declare dependencies
 - nitime: does not declare dependencies
+- yep: depends on gperftools

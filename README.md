@@ -15,8 +15,11 @@ Improvements over pip2arch
 
 - Supports wheels (if both a sdist and a wheel is available, prefer the former,
   except if `--prefer-wheel` is passed).
-- Resolves dependencies via installation in a temporary virtualenv, and also
-  creates PKGBUILDs for those that are not available as official packages.
+- Resolves Python dependencies via installation in a temporary virtualenv, and
+  also creates PKGBUILDs for those that are not available as official packages.
+- Resolves binary dependencies via `namcap` and adds them to the `depends`
+  array if they are installed (thus, it is suggested to first install them as
+  `--asdeps` and then let the generated PKGBUILD pick them up as dependencies).
 - Automatically tries to fetch a missing license file from Github, if
   applicable.
 - Automatically builds the package (with options given in `--makepkg=...`) and

@@ -123,6 +123,7 @@ md5sums+=({md5s})
 """
 
 PKGBUILD_CONTENTS = """\
+## EXTRA_DEPENDS ##
 
 _PIP_CMD='pip --disable-pip-version-check --isolated'
 
@@ -466,22 +467,32 @@ def main(name,
     Path(cwd, "PKGBUILD").write_text(package.get_pkgbuild_contents())
     for fname, content in package.get_files().items():
         Path(cwd, fname).write_bytes(content)
-    _run_shell("mksrcinfo", cwd=cwd)
     cmd = ["makepkg",
            *(["--force"] if force else []),
            *shlex.split(makepkg)]
     subprocess.run(cmd, check=True, cwd=cwd)
-    _run_shell("namcap PKGBUILD", cwd=cwd)
     fnames = (_run_shell("makepkg --packagelist", cwd=cwd, stdout=PIPE).
               stdout.splitlines())
     for fname in fnames:
+        # Only one of the archs will be globbed successfully.
         for fullname in Path(cwd).glob(fname + ".*"):
+            extra_deps = _run_shell(
+                "namcap {} | grep -Po '(?<=E: Dependency ).*(?= detected and not included)'"
+                "|| true".format(fullname.name),
+                cwd=cwd, stdout=PIPE).stdout.splitlines()
+            Path(cwd, "PKGBUILD").write_text(
+                package.get_pkgbuild_contents().replace(
+                    "## EXTRA_DEPENDS ##",
+                    "depends+=({})".format(" ".join(extra_deps))))
+            _run_shell("makepkg --force --repackage", cwd=cwd)
             # Python dependencies always get misanalyzed so we just filter them
             # away; how to do this via a switch to namcap is not so clear.
             _run_shell(
                 "namcap {} | grep -v 'W: Dependency included and not needed' "
                 "|| true".format(fullname.name),
                 cwd=cwd)
+    _run_shell("namcap PKGBUILD", cwd=cwd)
+    _run_shell("mksrcinfo", cwd=cwd)
 
 
 if __name__ == "__main__":
