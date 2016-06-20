@@ -27,7 +27,8 @@ PLATFORM_TAGS = {
 SDIST_SUFFIXES = [".tar.gz", ".tar.bz2", ".zip"]
 WHEEL_SUFFIX = ".whl"
 OTHER_SUFFIXES = [".egg", ".exe"]
-LICENSE_NAMES = ["LICENSE", "LICENSE.txt", "COPYING.rst", "COPYING.txt"]
+LICENSE_NAMES = [
+    "LICENSE", "LICENSE.txt", "COPYING.rst", "COPYING.txt", "COPYRIGHT"]
 TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
     "GNU Affero General Public License v3":
         "AGPL3",
@@ -43,6 +44,8 @@ TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
     # "FDL1.2",  # See FDL1.3.
     "GNU Free Documentation License (FDL)":
         "FDL1.3",
+    "GNU General Public License (GPL)":
+        "GPL",
     "GNU General Public License v2 (GPLv2)":
         "GPL2",
     "GNU General Public License v2 or later (GPLv2+)":
@@ -51,6 +54,8 @@ TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
         "GPL3",
     "GNU General Public License v3 or later (GPLv3+)":
         "GPL3",
+    "GNU Library or Lesser General Public License (LGPL)":
+        "LGPL",
     "GNU Lesser General Public License v2 (GPLv2)":
         "LGPL2.1",
     "GNU Lesser General Public License v2 or later (GPLv2+)":
@@ -216,14 +221,6 @@ def _pypi_request(name):
     return json.loads(r.read().decode(r.headers.get_param("charset")))
 
 
-def _as_arch_name(pypi_name):
-    # Handle special cases.
-    if pypi_name in ["ipython", "yapf"]:
-        return pypi_name.lower()
-    else:
-        return "python-{}".format(pypi_name.lower())
-
-
 class PackageRef:
     def __init__(self, name):
         # Name on PyPI.
@@ -236,7 +233,7 @@ class PackageRef:
                 self.pypi_name, sys.version_info)],
             stdout=PIPE, universal_newlines=True)
         if process.returncode:
-            self.pkgname = "python-{}".format(self.pypi_name)
+            self.pkgname = "python-{}".format(self.pypi_name.lower())
             self.exists = False
         else:
             self.pkgname = process.stdout[:-1]  # Strip newline.
