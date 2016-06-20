@@ -24,7 +24,5 @@ licensing
 others
 ------
 
-- statprof-smarkets: confusing tgz from bdist_dumb
-
 - gatspy: does not declare dependencies
 - nitime: does not declare dependencies

@@ -24,8 +24,6 @@ PY_TAGS = ["py2.py3",
 PLATFORM_TAGS = {
     "any": "any", "manylinux1_i686": "i686", "manylinux1_x86_64": "x86_64"}
 SDIST_SUFFIXES = [".tar.gz", ".tar.bz2", ".zip"]
-WHEEL_SUFFIX = ".whl"
-OTHER_SUFFIXES = [".egg", ".exe"]
 LICENSE_NAMES = [
     "LICENSE", "LICENSE.txt", "COPYING.rst", "COPYING.txt", "COPYRIGHT"]
 TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
@@ -258,12 +256,11 @@ class Package:
         self._version = version = self._data["version"]
 
         LOGGER.info("Packaging %s %s", self.pkgname, version)
-        suffix_prefs = ([WHEEL_SUFFIX, *SDIST_SUFFIXES] if prefer_wheel
-                        else [*SDIST_SUFFIXES, WHEEL_SUFFIX])
+        type_prefs = (["bdist_wheel", "sdist"] if prefer_wheel
+                      else ["sdist", "bdist_wheel"])
         urls = sorted(
             self._filter_urls(response["urls"]),
-            key=lambda url: next(i for i, suffix in enumerate(suffix_prefs)
-                                 if url["path"].endswith(suffix)))
+            key=lambda url: type_prefs.index(url["packagetype"]))
         if not urls:
             raise NoPackageError(
                 "No URL available for package {!r}.".format(self.pkgname))
@@ -276,7 +273,7 @@ class Package:
         self._find_license()
 
         stream.write(PKGBUILD_HEADER.format(pkg=self, info=info))
-        if self._urls[0]["path"].endswith(WHEEL_SUFFIX):
+        if self._urls[0]["packagetype"] == "bdist_wheel":
             # Expected to be either just "any", or some specific archs.
             for url in self._urls:
                 wheel_info = parse_wheel(url["path"])
@@ -301,7 +298,7 @@ class Package:
 
     def _filter_urls(self, urls):
         for url in urls:
-            if url["path"].endswith(WHEEL_SUFFIX):
+            if url["packagetype"] == "bdist_wheel":
                 wheel_info = parse_wheel(url["path"])
                 assert (wheel_info.name == self._ref.wheel_name
                         and wheel_info.version == self._version)
@@ -309,20 +306,16 @@ class Package:
                         or wheel_info.platform not in PLATFORM_TAGS):
                     continue
                 yield url
-            elif url["path"].endswith(tuple(SDIST_SUFFIXES)):
+            elif url["packagetype"] == "sdist":
                 yield url
-            elif url["path"].endswith(tuple(OTHER_SUFFIXES)):
-                pass
-            else:
-                LOGGER.warning("Skipping unknown suffix: %s",
-                               Path(url["path"]).name)
+            # Skip other dists.
 
     def _find_arch_makedepends_depends(self):
         self._arch = ["any"]
         self._makedepends = PackageRefList([PackageRef("pip")])
         makedepends_cython = False
         with TemporaryDirectory() as tmpdir:
-            if self._urls[0]["path"].endswith(WHEEL_SUFFIX):
+            if self._urls[0]["packagetype"] == "bdist_wheel":
                 self._arch = sorted(
                     {PLATFORM_TAGS[parse_wheel(url["path"]).platform]
                      for url in self._urls})
@@ -393,7 +386,7 @@ class Package:
         _license_found = False
         if self._license not in TROVE_COMMON_LICENSES:
             for url in [self._data["download_url"], self._data["home_page"]]:
-                parse = urllib.parse.urlparse(url)
+                parse = urllib.parse.urlparse(url or "")  # Could be None.
                 if len(Path(parse.path).parts) != 3:  # ["/", user, name]
                     continue
                 if parse.netloc in ["github.com", "www.github.com"]:
@@ -421,7 +414,11 @@ class Package:
     pkgname = property(lambda self: self._ref.pkgname)
     pkgver = property(lambda self: shlex.quote(self._version))
     pkgdesc = property(lambda self: shlex.quote(self._data["summary"]))
-    url = property(lambda self: shlex.quote(self._data["home_page"]))
+    url = property(lambda self: shlex.quote(
+        next(url for url in [self._data["home_page"],
+                             self._data["download_url"],
+                             self._data["package_url"]]
+             if url not in [None, "UNKNOWN"])))
     depends = property(lambda self: self._depends)
     makedepends = property(lambda self: self._makedepends)
     checkdepends = property(lambda self: PackageRefList())
