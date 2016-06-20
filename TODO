@@ -1,2 +1,0 @@
-Update depends based on namcap's dependency-detected-not-included.
-Handle features (e.g. scikit-image depends on dask[array]).

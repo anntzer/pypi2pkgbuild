@@ -56,13 +56,13 @@ TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
         "GPL3",
     "GNU Library or Lesser General Public License (LGPL)":
         "LGPL",
-    "GNU Lesser General Public License v2 (GPLv2)":
+    "GNU Lesser General Public License v2 (LGPLv2)":
         "LGPL2.1",
-    "GNU Lesser General Public License v2 or later (GPLv2+)":
+    "GNU Lesser General Public License v2 or later (LGPLv2+)":
         "LGPL2.1",
-    "GNU Lesser General Public License v3 (GPLv3)":
+    "GNU Lesser General Public License v3 (LGPLv3)":
         "LGPL3",
-    "GNU Lesser General Public License v3 or later (GPLv3+)":
+    "GNU Lesser General Public License v3 or later (LGPLv3+)":
         "LGPL3",
     # "LPPL",
     "Mozilla Public License 1.1 (MPL 1.1)":
@@ -344,16 +344,22 @@ class Package:
         # environment markers (from `self._data["requires_dist"]`).
         # The package name may get denormalized ("_" -> "-") during installation
         # so we just look at whatever got installed.
+        #
+        # To handle sdists that depend on numpy, we just see whether installing
+        # in presence of numpy makes things better...
         with TemporaryDirectory() as venvdir:
             script = (r"""
-                pyvenv {venvdir}
-                . {venvdir}/bin/activate
-                pip --isolated install --upgrade pip >/dev/null
-                {install_cython}
-                pip --isolated install --no-deps {self._ref.pypi_name} \
-                    >/dev/null
-                pip show "$(pip freeze | cut -d= -f1 | grep -v '^Cython$')" \
-                    | grep -Po '(?<=^Requires: ).*'
+            pyvenv {venvdir}
+            . {venvdir}/bin/activate
+            pip --isolated install --upgrade pip >/dev/null
+            {install_cython}
+            INSTALL_CMD='pip --isolated install --no-deps {self._ref.pypi_name}'
+            $INSTALL_CMD >/dev/null \
+                || (echo 'numpy' \
+                    && pip --isolated install --no-deps numpy >/dev/null \
+                    && $INSTALL_CMD >/dev/null)
+            pip show "$(pip freeze | cut -d= -f1 | grep -v '^Cython\|numpy$')" \
+                | grep -Po '(?<=^Requires:).*'
             """.format(
                 self=self,
                 venvdir=venvdir,
@@ -361,10 +367,10 @@ class Package:
                                 if makedepends_cython
                                 else "")))
             process = _run_shell(["sh"], input=script, stdout=PIPE)
-        self._depends = PackageRefList(  # Normalize names.
-            PackageRef(depend)
-            for depend in filter(
-                    None, process.stdout[:-1].split(", ")))  # Strip newline.
+        depends = process.stdout[:-1].replace(",", " ").split()
+        depends = list(  # Drop prefix duplicates.
+            OrderedDict(zip(depends[::-1], [None] * len(depends))))[::-1]
+        self._depends = PackageRefList(PackageRef(depend) for depend in depends)
 
     def _find_license(self):
         license_classes = [
