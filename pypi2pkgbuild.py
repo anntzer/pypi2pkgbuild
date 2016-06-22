@@ -25,7 +25,8 @@ PLATFORM_TAGS = {
     "any": "any", "manylinux1_i686": "i686", "manylinux1_x86_64": "x86_64"}
 SDIST_SUFFIXES = [".tar.gz", ".tar.bz2", ".zip"]
 LICENSE_NAMES = [
-    "LICENSE", "LICENSE.txt", "COPYING.rst", "COPYING.txt", "COPYRIGHT"]
+    "LICENSE", "LICENSE.txt", "LICENCE", "LICENCE.txt",
+    "COPYING.rst", "COPYING.txt", "COPYRIGHT"]
 TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
     "GNU Affero General Public License v3":
         "AGPL3",
@@ -63,6 +64,9 @@ TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
         "LGPL3",
     # "LPPL",
     "Mozilla Public License 1.1 (MPL 1.1)":
+        "MPL",
+    "Mozilla Public License 2.0 (MPL 2.0)":
+        # Technically different, but Arch itself marks e.g. Firefox as "MPL".
         "MPL",
     # "PerlArtistic",  # See Artistic2.0.
     # "PHP",
@@ -366,26 +370,28 @@ class Package:
         self._depends = PackageRefList(PackageRef(depend) for depend in depends)
 
     def _find_license(self):
+        self._licenses = licenses = []
         license_classes = [
             classifier for classifier in self._data["classifiers"]
-            if classifier.startswith("License :: ")]
-        if len(license_classes) > 1:
-            raise ValueError("Multiple licenses not supported")
-        elif len(license_classes) == 1:
-            license_class = license_classes[0].split(" :: ")[-1]
-            try:
-                self._license = {**TROVE_COMMON_LICENSES,
-                                 **TROVE_SPECIAL_LICENSES}[license_class]
-            except KeyError:
-                self._license = license_class
+            if classifier.startswith("License :: ")
+               and classifier != "License :: OSI Approved"]  # What's that?...
+        if license_classes:
+            for license_class in license_classes:
+                *_, license_class = license_class.split(" :: ")
+                try:
+                    licenses.append(
+                        {**TROVE_COMMON_LICENSES,
+                         **TROVE_SPECIAL_LICENSES}[license_class])
+                except KeyError:
+                    licenses.append(license_class)
         elif self._data["license"] not in [None, "UNKNOWN"]:
-            self._license = self._data["license"]
+            licenses.append("custom:{}".format(self._data["license"]))
         else:
             LOGGER.warning("No license information available")
-            self._license = "UNKNOWN"
+            licenses.append("custom:unknown")
 
         _license_found = False
-        if self._license not in TROVE_COMMON_LICENSES:
+        if any(license not in TROVE_COMMON_LICENSES for license in licenses):
             for url in [self._data["download_url"], self._data["home_page"]]:
                 parse = urllib.parse.urlparse(url or "")  # Could be None.
                 if len(Path(parse.path).parts) != 3:  # ["/", user, name]
@@ -423,7 +429,7 @@ class Package:
     depends = property(lambda self: self._depends)
     makedepends = property(lambda self: self._makedepends)
     checkdepends = property(lambda self: PackageRefList())
-    license = property(lambda self: shlex.quote(self._license))
+    license = property(lambda self: " ".join(map(shlex.quote, self._licenses)))
     arch = property(lambda self: " ".join(self._arch))
 
     def get_pkgbuild_contents(self):
