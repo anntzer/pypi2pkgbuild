@@ -10,6 +10,17 @@ the package in a virtualenv to figure out the dependencies.
 
 The package is then built and verified with `namcap`.
 
+The goal is to make this tool as automated as possible: if all the information
+to build a package is (reasonably) accessible, this tool should be able to
+build it.
+
+In order to provide additional information to `makepkg`, edit
+`PKGBUILD_EXTRAS`, which is sourced at the *end* of `PKGBUILD`.
+
+By default, `pkgrel` is set to `00`.  The intent is to prefer native packages
+(or AUR ones, if using an AUR helper), relying on this tool only for
+missing/out-of-date packages.
+
 Improvements over pip2arch
 --------------------------
 
@@ -24,13 +35,6 @@ Improvements over pip2arch
   applicable.
 - Automatically builds the package (with options given in `--makepkg=...`) and
   run `namcap`.
-
-The goal is to make this tool as automated as possible: if all the information
-to build a package is (reasonably) accessible, this tool should be able to
-build it.
-
-In order to provide additional information to `makepkg`, edit
-`PKGBUILD_EXTRAS`, which is sourced at the *end* of `PKGBUILD`.
 
 Dependencies
 ------------

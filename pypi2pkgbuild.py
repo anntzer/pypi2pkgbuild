@@ -94,7 +94,7 @@ PKGBUILD_HEADER = """\
 
 pkgname={pkg.pkgname}
 pkgver={pkg.pkgver}
-pkgrel=0
+pkgrel=00
 pkgdesc={pkg.pkgdesc}
 url={pkg.url}
 depends=(python {pkg.depends})
@@ -450,11 +450,11 @@ def get_config():
     return {"maintainer": maintainer}
 
 
-def main(name,
-         force=False,
-         prefer_wheel=False,
-         skipdeps=False,
-         makepkg="--cleanbuild --nodeps"):
+def create_package(name,
+                   force=False,
+                   prefer_wheel=False,
+                   skipdeps=False,
+                   makepkg="--cleanbuild --nodeps"):
 
     package = Package(name, get_config(), prefer_wheel=prefer_wheel)
 
@@ -462,8 +462,9 @@ def main(name,
         for ref in package._depends:
             if not ref.exists:
                 # Dependency not found, build it too.
-                main(ref.pypi_name,
-                     force=force, prefer_wheel=prefer_wheel, makepkg=makepkg)
+                create_package(
+                    ref.pypi_name,
+                    force=force, prefer_wheel=prefer_wheel, makepkg=makepkg)
 
     cwd = package.pkgname
     Path(cwd).mkdir(parents=True, exist_ok=force)
@@ -501,12 +502,33 @@ def main(name,
     _run_shell("mksrcinfo", cwd=cwd)
 
 
+def find_outdated():
+    syswide_location = (
+        "{0.prefix}/lib/python{0.version_info.major}.{0.version_info.minor}"
+        "/site-packages".format(sys))
+    # `pip show` is rather slow, so just call it once.
+    lines = _run_shell("pip list --outdated", stdout=PIPE).stdout.splitlines()
+    names = [line.split()[0] for line in lines]
+    locs = _run_shell("pip show {} | grep -Po '(?<=^Location: ).*'".
+                      format(" ".join(names)), stdout=PIPE).stdout.splitlines()
+    for line, name, loc in zip(lines, names, locs):
+        if loc == syswide_location:
+            if _run_shell(
+                    "pacman -Qo {}/{}-*".format(
+                        syswide_location, name.replace("-", "_")),
+                    stdout=PIPE).stdout[:-1].endswith("-00"):
+                print(line)
+
+
 if __name__ == "__main__":
     logging.basicConfig(level="INFO")
     parser = ArgumentParser(
         description="Create a PKGBUILD for a PyPI package and run makepkg.",
         formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument("name", help="The PyPI package name.")
+    parser.add_argument("name", nargs="?",
+                        help="The PyPI package name.")
+    parser.add_argument("-o", "--outdated", action="store_true",
+                        help="Find outdated automatic packages.")
     parser.add_argument("-f", "--force", action="store_true",
                         help="Overwrite a previously existing PKGBUILD.")
     parser.add_argument("-w", "--prefer-wheel", action="store_true",
@@ -516,8 +538,17 @@ if __name__ == "__main__":
     parser.add_argument("-m", "--makepkg", default="--cleanbuild --nodeps",
                         help="Additional arguments to pass to makepkg.")
     args = parser.parse_args()
-    try:
-        main(**vars(args))
-    except NoPackageError as e:
-        print(e, file=sys.stderr)
-        sys.exit(1)
+
+    if args.outdated:
+        if args.name:
+            parser.error("--outdated should be given alone.")
+        else:
+            find_outdated()
+
+    else:
+        del args.outdated
+        try:
+            create_package(**vars(args))
+        except NoPackageError as e:
+            print(e, file=sys.stderr)
+            sys.exit(1)
