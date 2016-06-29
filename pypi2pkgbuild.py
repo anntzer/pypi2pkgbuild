@@ -23,9 +23,9 @@ PY_TAGS = ["py2.py3",
            "cp{0.major}{0.minor}".format(sys.version_info)]
 PLATFORM_TAGS = {
     "any": "any", "manylinux1_i686": "i686", "manylinux1_x86_64": "x86_64"}
-SDIST_SUFFIXES = [".tar.gz", ".tar.bz2", ".zip"]
+SDIST_SUFFIXES = [".tar.gz", ".tgz", ".tar.bz2", ".zip"]
 LICENSE_NAMES = [
-    "LICENSE", "LICENSE.txt", "LICENCE", "LICENCE.txt",
+    "LICENSE", "LICENSE.txt", "LICENCE", "LICENCE.txt", "license.txt",
     "COPYING.rst", "COPYING.txt", "COPYRIGHT"]
 TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
     "GNU Affero General Public License v3":
@@ -220,7 +220,8 @@ def _pypi_request(name):
             "https://pypi.python.org/pypi/{}/json".format(name))
     except urllib.error.HTTPError:
         raise NoPackageError("Package {!r} not found.".format(name))
-    return json.loads(r.read().decode(r.headers.get_param("charset")))
+    return json.loads(r.read().decode(r.headers.get_param("charset")),
+                      object_pairs_hook=OrderedDict)
 
 
 class PackageRef:
@@ -252,6 +253,7 @@ class PackageRefList(list):
 class Package:
     def __init__(self, name, info, prefer_wheel=False):
         stream = StringIO()
+        self._srctree = None
         self._files = OrderedDict()
 
         self._ref = PackageRef(name)
@@ -313,6 +315,18 @@ class Package:
                 yield url
             # Skip other dists.
 
+    def _get_srctree(self):
+        url = next(url for url in self._urls
+                   if url["path"].endswith(tuple(SDIST_SUFFIXES)))
+        if self._srctree is None:
+            self._srctree = TemporaryDirectory()
+            r = urllib.request.urlopen(url["url"])
+            tmppath = Path(self._srctree.name, Path(url["path"]).name)
+            tmppath.write_bytes(r.read())
+            shutil.unpack_archive(str(tmppath), self._srctree.name)
+        return Path(self._srctree.name,
+                    "{0._ref.pypi_name}-{0.pkgver}".format(self))
+
     def _find_arch_makedepends_depends(self):
         self._arch = ["any"]
         self._makedepends = PackageRefList([PackageRef("pip")])
@@ -323,20 +337,15 @@ class Package:
         if self._urls[0]["packagetype"] == "bdist_wheel":
             self._arch = archs
         else:
-            with TemporaryDirectory() as tmpdir:
-                r = urllib.request.urlopen(self._urls[0]["url"])
-                tmppath = Path(tmpdir, Path(self._urls[0]["path"]).name)
-                tmppath.write_bytes(r.read())
-                shutil.unpack_archive(str(tmppath), tmpdir)
-                if list(Path(tmpdir).glob("**/*.pyx")):
-                    self._arch = ["i686", "x86_64"]
-                    self._makedepends.append(PackageRef("cython"))
-                    makedepends_cython = True
-                if not "any" in archs and list(Path(tmpdir).glob("**/*.c")):
-                    # Don't bother checking for the presence of C sources if
-                    # there's an "any" wheel available; e.g. pexpect has a C
-                    # source in its *tests*.
-                    self._arch = ["i686", "x86_64"]
+            if list(self._get_srctree().glob("**/*.pyx")):
+                self._arch = ["i686", "x86_64"]
+                self._makedepends.append(PackageRef("cython"))
+                makedepends_cython = True
+            if not "any" in archs and list(self._get_srctree().glob("**/*.c")):
+                # Don't bother checking for the presence of C sources if
+                # there's an "any" wheel available; e.g. pexpect has a C source
+                # in its *tests*.
+                self._arch = ["i686", "x86_64"]
 
         # Dependency resolution is done by installing the package in a venv
         # and calling `pip show`; otherwise it would be necessary to parse
@@ -385,7 +394,7 @@ class Package:
                         {**TROVE_COMMON_LICENSES,
                          **TROVE_SPECIAL_LICENSES}[license_class])
                 except KeyError:
-                    licenses.append(license_class)
+                    licenses.append("custom:{}".format(license_class))
         elif self._data["license"] not in [None, "UNKNOWN"]:
             licenses.append("custom:{}".format(self._data["license"]))
         else:
@@ -418,7 +427,13 @@ class Package:
                 if _license_found:
                     break
             else:
-                LOGGER.warning("Could not retrieve license file")
+                for path in (self._get_srctree() / license_name
+                             for license_name in LICENSE_NAMES):
+                    if path.exists():
+                        self._files.update(LICENSE=path.read_bytes())
+                        break
+                else:
+                    LOGGER.warning("Could not retrieve license file")
 
     pkgname = property(lambda self: self._ref.pkgname)
     pkgver = property(lambda self: shlex.quote(self._version))
@@ -487,7 +502,8 @@ def create_package(name,
                        stdout.splitlines())),
         [])
     extra_deps = _run_shell(
-        "namcap {} | grep -Po '(?<=E: Dependency ).*(?= detected and not included)'"
+        "namcap {} | "
+        "grep -Po '(?<=E: Dependency ).*(?= detected and not included)'"
         "|| true".format(fullname.name),
         cwd=cwd, stdout=PIPE).stdout.splitlines()
     Path(cwd, "PKGBUILD").write_text(
