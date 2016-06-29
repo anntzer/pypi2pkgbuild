@@ -263,24 +263,22 @@ class Package:
         LOGGER.info("Packaging %s %s", self.pkgname, version)
         type_prefs = (["bdist_wheel", "sdist"] if prefer_wheel
                       else ["sdist", "bdist_wheel"])
-        urls = sorted(
+        self._urls = sorted(
             self._filter_urls(response["urls"]),
             key=lambda url: type_prefs.index(url["packagetype"]))
-        if not urls:
+        if not self._urls:
             raise NoPackageError(
                 "No URL available for package {!r}.".format(self.pkgname))
-        # Expected to be either a single sdist, or a bunch of wheels.
-        self._urls = [
-            url for url in urls
-            if Path(url["path"]).suffix == Path(urls[0]["path"]).suffix]
 
         self._find_arch_makedepends_depends()
         self._find_license()
 
         stream.write(PKGBUILD_HEADER.format(pkg=self, info=info))
         if self._urls[0]["packagetype"] == "bdist_wheel":
-            # Expected to be either just "any", or some specific archs.
+            # Either just "any", or some specific archs.
             for url in self._urls:
+                if url["packagetype"] != "bdist_wheel":
+                    continue
                 wheel_info = parse_wheel(url["path"])
                 if wheel_info.platform == "any":
                     src_template = WHEEL_ANY_SOURCE
@@ -291,7 +289,7 @@ class Package:
                     url=url,
                     name=Path(url["path"]).name))
         else:
-            stream.write(SDIST_SOURCE.format(url=urls[0]))
+            stream.write(SDIST_SOURCE.format(url=self._urls[0]))
         stream.write(MORE_SOURCES.format(
             names=" ".join(shlex.quote(name)
                            for name in self._files),
@@ -319,12 +317,13 @@ class Package:
         self._arch = ["any"]
         self._makedepends = PackageRefList([PackageRef("pip")])
         makedepends_cython = False
-        with TemporaryDirectory() as tmpdir:
-            if self._urls[0]["packagetype"] == "bdist_wheel":
-                self._arch = sorted(
-                    {PLATFORM_TAGS[parse_wheel(url["path"]).platform]
-                     for url in self._urls})
-            else:
+        archs = sorted(
+            {PLATFORM_TAGS[parse_wheel(url["path"]).platform]
+             for url in self._urls if url["packagetype"] == "bdist_wheel"})
+        if self._urls[0]["packagetype"] == "bdist_wheel":
+            self._arch = archs
+        else:
+            with TemporaryDirectory() as tmpdir:
                 r = urllib.request.urlopen(self._urls[0]["url"])
                 tmppath = Path(tmpdir, Path(self._urls[0]["path"]).name)
                 tmppath.write_bytes(r.read())
@@ -333,7 +332,10 @@ class Package:
                     self._arch = ["i686", "x86_64"]
                     self._makedepends.append(PackageRef("cython"))
                     makedepends_cython = True
-                if list(Path(tmpdir).glob("**/*.c")):
+                if not "any" in archs and list(Path(tmpdir).glob("**/*.c")):
+                    # Don't bother checking for the presence of C sources if
+                    # there's an "any" wheel available; e.g. pexpect has a C
+                    # source in its *tests*.
                     self._arch = ["i686", "x86_64"]
 
         # Dependency resolution is done by installing the package in a venv
@@ -478,26 +480,27 @@ def create_package(name,
            *(["--force"] if force else []),
            *shlex.split(makepkg)]
     subprocess.run(cmd, check=True, cwd=cwd)
-    fnames = (_run_shell("makepkg --packagelist", cwd=cwd, stdout=PIPE).
-              stdout.splitlines())
-    for fname in fnames:
-        # Only one of the archs will be globbed successfully.
-        for fullname in Path(cwd).glob(fname + ".*"):
-            extra_deps = _run_shell(
-                "namcap {} | grep -Po '(?<=E: Dependency ).*(?= detected and not included)'"
-                "|| true".format(fullname.name),
-                cwd=cwd, stdout=PIPE).stdout.splitlines()
-            Path(cwd, "PKGBUILD").write_text(
-                package.get_pkgbuild_contents().replace(
-                    "## EXTRA_DEPENDS ##",
-                    "depends+=({})".format(" ".join(extra_deps))))
-            _run_shell("makepkg --force --repackage", cwd=cwd)
-            # Python dependencies always get misanalyzed so we just filter them
-            # away; how to do this via a switch to namcap is not so clear.
-            _run_shell(
-                "namcap {} | grep -v 'W: Dependency included and not needed' "
-                "|| true".format(fullname.name),
-                cwd=cwd)
+    # Only one of the archs will be globbed successfully.
+    fullname, = sum(
+        (list(Path(cwd).glob(fname + ".*"))
+         for fname in (_run_shell("makepkg --packagelist", cwd=cwd, stdout=PIPE).
+                       stdout.splitlines())),
+        [])
+    extra_deps = _run_shell(
+        "namcap {} | grep -Po '(?<=E: Dependency ).*(?= detected and not included)'"
+        "|| true".format(fullname.name),
+        cwd=cwd, stdout=PIPE).stdout.splitlines()
+    Path(cwd, "PKGBUILD").write_text(
+        package.get_pkgbuild_contents().replace(
+            "## EXTRA_DEPENDS ##",
+            "depends+=({})".format(" ".join(extra_deps))))
+    _run_shell("makepkg --force --repackage", cwd=cwd)
+    # Python dependencies always get misanalyzed so we just filter them
+    # away; how to do this via a switch to namcap is not so clear.
+    _run_shell(
+        "namcap {} | grep -v 'W: Dependency included and not needed' || true".
+        format(fullname.name),
+        cwd=cwd)
     _run_shell("namcap PKGBUILD", cwd=cwd)
     _run_shell("mksrcinfo", cwd=cwd)
 
