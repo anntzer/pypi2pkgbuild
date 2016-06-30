@@ -1,6 +1,3 @@
-- mistune has an any wheel but an optional arch dependency.  Need to repackage
-  after namcap complains / build the wheel in a venv / whatever...
-
 Failing builds
 ==============
 
@@ -21,4 +18,5 @@ others
 - gatspy: does not declare dependencies
 - hmmlearn: does not declare dependencies
 - nitime: does not declare dependencies
+- supersmoother: does not declare dependencies
 - yep: depends on gperftools

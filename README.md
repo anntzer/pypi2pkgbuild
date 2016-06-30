@@ -24,8 +24,8 @@ missing/out-of-date packages.
 Improvements over pip2arch
 --------------------------
 
-- Supports wheels (if both a sdist and a wheel is available, prefer the former,
-  except if `--prefer-wheel` is passed).
+- Supports wheels (the default is to prefer `any`-platform wheels, then
+  `sdist`s, then `manylinux1` wheels, but this can be changed using `--prefer`).
 - Resolves Python dependencies via installation in a temporary virtualenv, and
   also creates PKGBUILDs for those that are not available as official packages.
 - Resolves binary dependencies via `namcap` and adds them to the `depends`

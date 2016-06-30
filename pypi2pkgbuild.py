@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import namedtuple, OrderedDict
+from contextlib import suppress
 from functools import lru_cache, partial
 import hashlib
 from io import StringIO
@@ -251,7 +252,7 @@ class PackageRefList(list):
 
 
 class Package:
-    def __init__(self, name, info, prefer_wheel=False):
+    def __init__(self, name, info, prefer):
         stream = StringIO()
         self._srctree = None
         self._files = OrderedDict()
@@ -263,11 +264,7 @@ class Package:
         self._version = version = self._data["version"]
 
         LOGGER.info("Packaging %s %s", self.pkgname, version)
-        type_prefs = (["bdist_wheel", "sdist"] if prefer_wheel
-                      else ["sdist", "bdist_wheel"])
-        self._urls = sorted(
-            self._filter_urls(response["urls"]),
-            key=lambda url: type_prefs.index(url["packagetype"]))
+        self._urls = self._filter_and_sort_urls(response["urls"], prefer)
         if not self._urls:
             raise NoPackageError(
                 "No URL available for package {!r}.".format(self.pkgname))
@@ -301,19 +298,29 @@ class Package:
 
         self._pkgbuild = stream.getvalue()
 
-    def _filter_urls(self, urls):
-        for url in urls:
+    def _filter_and_sort_urls(self, unfiltered_urls, prefer):
+        urls = []
+        for url in unfiltered_urls:
             if url["packagetype"] == "bdist_wheel":
                 wheel_info = parse_wheel(url["path"])
                 assert (wheel_info.name == self._ref.wheel_name
                         and wheel_info.version == self._version)
-                if (wheel_info.py not in PY_TAGS
-                        or wheel_info.platform not in PLATFORM_TAGS):
+                if wheel_info.py not in PY_TAGS:
                     continue
-                yield url
+                if wheel_info.platform == "any":
+                    with suppress(ValueError):
+                        urls.append((url, prefer.index("anywheel")))
+                elif wheel_info.platform.startswith("manylinux"):
+                    with suppress(ValueError):
+                        urls.append((url, prefer.index("manylinuxwheel")))
+                else:  # Skip other platforms.
+                    continue
             elif url["packagetype"] == "sdist":
-                yield url
-            # Skip other dists.
+                with suppress(ValueError):
+                    urls.append((url, prefer.index("sdist")))
+            else:  # Skip other dists.
+                continue
+        return [url for url, key in sorted(urls, key=lambda kv: kv[1])]
 
     def _get_srctree(self):
         url = next(url for url in self._urls
@@ -469,19 +476,18 @@ def get_config():
 
 def create_package(name,
                    force=False,
-                   prefer_wheel=False,
+                   prefer=False,
                    skipdeps=False,
                    makepkg="--cleanbuild --nodeps"):
 
-    package = Package(name, get_config(), prefer_wheel=prefer_wheel)
+    package = Package(name, get_config(), prefer=prefer)
 
     if not skipdeps:
         for ref in package._depends:
             if not ref.exists:
                 # Dependency not found, build it too.
                 create_package(
-                    ref.pypi_name,
-                    force=force, prefer_wheel=prefer_wheel, makepkg=makepkg)
+                    ref.pypi_name, force=force, prefer=prefer, makepkg=makepkg)
 
     cwd = package.pkgname
     Path(cwd).mkdir(parents=True, exist_ok=force)
@@ -544,18 +550,27 @@ if __name__ == "__main__":
     parser = ArgumentParser(
         description="Create a PKGBUILD for a PyPI package and run makepkg.",
         formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument("name", nargs="?",
-                        help="The PyPI package name.")
-    parser.add_argument("-o", "--outdated", action="store_true",
-                        help="Find outdated automatic packages.")
-    parser.add_argument("-f", "--force", action="store_true",
-                        help="Overwrite a previously existing PKGBUILD.")
-    parser.add_argument("-w", "--prefer-wheel", action="store_true",
-                        help="Prefer wheels to sdists.")
-    parser.add_argument("-s", "--skipdeps", action="store_true",
-                        help="Don't generate PKGBUILD for dependencies.")
-    parser.add_argument("-m", "--makepkg", default="--cleanbuild --nodeps",
-                        help="Additional arguments to pass to makepkg.")
+    parser.add_argument(
+        "name", nargs="?",
+        help="The PyPI package name.")
+    parser.add_argument(
+        "-o", "--outdated", action="store_true",
+        help="Find outdated automatic packages.")
+    parser.add_argument(
+        "-f", "--force", action="store_true",
+        help="Overwrite a previously existing PKGBUILD.")
+    parser.add_argument(
+        "-p", "--prefer", metavar="P",
+        default="anywheel:sdist:manylinuxwheel",
+        type=partial(str.split, sep=":"),
+        help="Preference order for dists.")
+    parser.add_argument(
+        "-s", "--skipdeps", action="store_true",
+        help="Don't generate PKGBUILD for dependencies.")
+    parser.add_argument(
+        "-m", "--makepkg", metavar="M",
+        default="--cleanbuild --nodeps",
+        help="Additional arguments to pass to makepkg.")
     args = parser.parse_args()
 
     if args.outdated:
