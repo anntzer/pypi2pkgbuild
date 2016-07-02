@@ -1,22 +1,32 @@
-Failing builds
-==============
+Issues
+======
 
-extra_requires
---------------
+- Arch packages that "vendor" some dependencies.
+  Could be resolved by reproducing the vendoring.
+    - `ipython` vendors `pickleshare`, etc.
 
-- scikit-image: depends on dask(array)
+- PyPI packages that depends on another package's `extra_requires`.
+  Needs upstream support from `pip show`.
+    - `scikit-image` depends on `dask[array]`.
 
-licensing
----------
+- Complex license layouts.
+    - `matplotlib` has a full `LICENSE` folder.
 
-- profilehooks: need scraping to find link to github (MIT)
-- versioneer: no classifier (public domain)
+- Messed up names.
+    - How am I supposed to know that `Cycler` is actually `cycler`?
 
-others
-------
+Remaining manual packages
+=========================
 
-- gatspy: does not declare dependencies
-- hmmlearn: does not declare dependencies
-- nitime: does not declare dependencies
-- supersmoother: does not declare dependencies
-- yep: depends on gperftools
+- Licensing issues:
+    - `profilehooks`: need scraping to find link to Github (MIT)
+    - `versioneer`: no classifier (public domain)
+
+- Undeclared dependencies:
+    - `gatspy`
+    - `hmmlearn`
+    - `nitime`
+    - `supersmoother`
+
+- `ctypes`-loaded binary dependencies.
+    - `yep`: depends on `gperftools`

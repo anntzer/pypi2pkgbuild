@@ -235,7 +235,7 @@ class PackageRef:
         # Name for Arch Linux.
         process = subprocess.run(
             ["pkgfile", "-rq", r"/{0}-.*py{1.major}.{1.minor}\.egg-info".format(
-                self.pypi_name, sys.version_info)],
+                self.wheel_name, sys.version_info)],
             stdout=PIPE, universal_newlines=True)
         if process.returncode:
             self.pkgname = "python-{}".format(self.pypi_name.lower())
@@ -305,7 +305,8 @@ class Package:
             if url["packagetype"] == "bdist_wheel":
                 wheel_info = parse_wheel(url["path"])
                 assert (wheel_info.name == self._ref.wheel_name
-                        and wheel_info.version == self._version)
+                        and wheel_info.version == self._version), \
+                    "Unexpected wheel info: {}".format(wheel_info)
                 if wheel_info.py not in PY_TAGS:
                     continue
                 if wheel_info.platform == "any":
@@ -324,8 +325,7 @@ class Package:
         return [url for url, key in sorted(urls, key=lambda kv: kv[1])]
 
     def _get_srctree(self):
-        url = next(url for url in self._urls
-                   if url["path"].endswith(tuple(SDIST_SUFFIXES)))
+        url = next(url for url in self._urls if url["packagetype"] == "sdist")
         if self._srctree is None:
             self._srctree = TemporaryDirectory()
             r = urllib.request.urlopen(url["url"])
