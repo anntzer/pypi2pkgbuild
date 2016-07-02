@@ -11,7 +11,7 @@ from pathlib import Path
 import shlex
 import shutil
 import subprocess
-from subprocess import PIPE
+from subprocess import CalledProcessError, DEVNULL, PIPE
 import sys
 from tempfile import TemporaryDirectory
 import urllib.request
@@ -516,7 +516,7 @@ def create_package(name,
         package.get_pkgbuild_contents().replace(
             "## EXTRA_DEPENDS ##",
             "depends+=({})".format(" ".join(extra_deps))))
-    _run_shell("makepkg --force --repackage", cwd=cwd)
+    _run_shell("makepkg --force --repackage --nodeps", cwd=cwd)
     # Python dependencies always get misanalyzed so we just filter them
     # away; how to do this via a switch to namcap is not so clear.
     _run_shell(
@@ -524,7 +524,7 @@ def create_package(name,
         format(fullname.name),
         cwd=cwd)
     _run_shell("namcap PKGBUILD", cwd=cwd)
-    _run_shell("mksrcinfo", cwd=cwd)
+    _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
 
 
 def find_outdated():
@@ -545,7 +545,16 @@ def find_outdated():
                 print(line)
 
 
-if __name__ == "__main__":
+def main():
+    try:
+        _run_shell("pkgfile pkgfile", stdout=DEVNULL)
+    except CalledProcessError:
+        # Display one of:
+        #   - "/bin/sh: pkgfile: command not found"
+        #   - "error: No repo files found. Please run `pkgfile --update'."
+        # on stderr.
+        sys.exit(1)
+
     logging.basicConfig(level="INFO")
     parser = ArgumentParser(
         description="Create a PKGBUILD for a PyPI package and run makepkg.",
@@ -581,8 +590,14 @@ if __name__ == "__main__":
 
     else:
         del args.outdated
+        if not args.name:
+            parser.error("error: the following arguments are required: name")
         try:
             create_package(**vars(args))
         except NoPackageError as e:
             print(e, file=sys.stderr)
             sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
