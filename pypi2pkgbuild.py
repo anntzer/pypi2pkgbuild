@@ -130,7 +130,8 @@ md5sums+=({md5s})
 PKGBUILD_CONTENTS = """\
 ## EXTRA_DEPENDS ##
 
-_PIP_CMD='pip --disable-pip-version-check --isolated'
+export PIP_CONFIG_FILE=/dev/null
+export PIP_DISABLE_PIP_VERSION_CHECK=true
 
 _first_source() {
     all_sources=("${source_i686[@]}" "${source_x86_64[@]}" "${source[@]}")
@@ -164,7 +165,7 @@ _license_filename() {
 build() {
     _is_wheel && return
     cd "$srcdir/$(_dist_name)"
-    $_PIP_CMD wheel -v --no-deps --wheel-dir "$srcdir" .
+    pip wheel -v --no-deps --wheel-dir "$srcdir" .
     license_filename=$(_license_filename)
     if [[ $license_filename ]]; then
         cp "$license_filename" "$srcdir/LICENSE"
@@ -183,7 +184,7 @@ check() {
 package() {
     cd "$srcdir"
     # pypa/pip#3063: pip always checks for a globally installed version.
-    $_PIP_CMD --quiet install --root="$pkgdir" --no-deps --ignore-installed *.whl
+    pip --quiet install --root="$pkgdir" --no-deps --ignore-installed *.whl
     if [[ -f LICENSE ]]; then
         install -D -m644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     fi
@@ -366,19 +367,20 @@ class Package:
             script = (r"""
             pyvenv {venvdir}
             . {venvdir}/bin/activate
-            pip --isolated install --upgrade pip >/dev/null
+            export PIP_CONFIG_FILE=/dev/null
+            pip install --upgrade pip >/dev/null
             {install_cython}
-            INSTALL_CMD='pip --isolated install --no-deps {self._ref.pypi_name}'
+            INSTALL_CMD='pip install --no-deps {self._ref.pypi_name}'
             $INSTALL_CMD >/dev/null \
                 || (echo 'numpy' \
-                    && pip --isolated install --no-deps numpy >/dev/null \
+                    && pip install numpy >/dev/null \
                     && $INSTALL_CMD >/dev/null)
             pip show "$(pip freeze | cut -d= -f1 | grep -v '^Cython\|numpy$')" \
                 | grep -Po '(?<=^Requires:).*'
             """.format(
                 self=self,
                 venvdir=venvdir,
-                install_cython=("pip --isolated install cython >/dev/null"
+                install_cython=("pip install cython >/dev/null"
                                 if makedepends_cython
                                 else "")))
             process = _run_shell(["sh"], input=script, stdout=PIPE)
