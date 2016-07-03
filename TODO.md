@@ -1,5 +1,5 @@
-Issues
-======
+Issues (blocking)
+=================
 
 - Arch packages that "vendor" some dependencies.
   Could be resolved by reproducing the vendoring.
@@ -9,11 +9,12 @@ Issues
   Needs upstream support from `pip show`.
     - `scikit-image` depends on `dask[array]`.
 
-- Complex license layouts.
-    - `matplotlib` has a full `LICENSE` folder.
+Issues (non-blocking)
+=====================
 
-- Messed up names.
-    - How am I supposed to know that `Cycler` is actually `cycler`?
+- Complex license layouts.
+  Can be worked around with `--no-license`.
+    - `matplotlib` has a `LICENSE` *folder*.
 
 Remaining manual packages
 =========================

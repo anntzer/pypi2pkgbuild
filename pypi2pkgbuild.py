@@ -233,9 +233,12 @@ class PackageRef:
         # Name for wheels.
         self.wheel_name = self.pypi_name.replace("-", "_")
         # Name for Arch Linux.
+        # FIXME(?) Case ignored due to messed up packages such as "cycler" (on
+        # PyPI as "Cycler").
         process = subprocess.run(
-            ["pkgfile", "-rq", r"/{0}-.*py{1.major}.{1.minor}\.egg-info".format(
-                self.wheel_name, sys.version_info)],
+            ["pkgfile", "-rqi",
+             r"/{0}-.*py{1.major}\.{1.minor}\.egg-info".format(
+                 self.wheel_name, sys.version_info)],
             stdout=PIPE, universal_newlines=True)
         if process.returncode:
             self.pkgname = "python-{}".format(self.pypi_name.lower())
@@ -253,7 +256,7 @@ class PackageRefList(list):
 
 
 class Package:
-    def __init__(self, name, info, prefer):
+    def __init__(self, name, info, prefer, license):
         stream = StringIO()
         self._srctree = None
         self._files = OrderedDict()
@@ -271,7 +274,9 @@ class Package:
                 "No URL available for package {!r}.".format(self.pkgname))
 
         self._find_arch_makedepends_depends()
-        self._find_license()
+        self._licenses = []
+        if license:
+            self._find_license()
 
         stream.write(PKGBUILD_HEADER.format(pkg=self, info=info))
         if self._urls[0]["packagetype"] == "bdist_wheel":
@@ -390,7 +395,7 @@ class Package:
         self._depends = PackageRefList(PackageRef(depend) for depend in depends)
 
     def _find_license(self):
-        self._licenses = licenses = []
+        licenses = self._licenses
         license_classes = [
             classifier for classifier in self._data["classifiers"]
             if classifier.startswith("License :: ")
@@ -479,17 +484,18 @@ def get_config():
 def create_package(name,
                    force=False,
                    prefer=False,
+                   license=True,
                    skipdeps=False,
                    makepkg="--cleanbuild --nodeps"):
 
-    package = Package(name, get_config(), prefer=prefer)
+    package = Package(name, get_config(), prefer=prefer, license=license)
 
     if not skipdeps:
         for ref in package._depends:
             if not ref.exists:
                 # Dependency not found, build it too.
-                create_package(
-                    ref.pypi_name, force=force, prefer=prefer, makepkg=makepkg)
+                create_package(ref.pypi_name, force=force, prefer=prefer,
+                               license=license, makepkg=makepkg)
 
     cwd = package.pkgname
     Path(cwd).mkdir(parents=True, exist_ok=force)
@@ -575,6 +581,10 @@ def main():
         default="anywheel:sdist:manylinuxwheel",
         type=partial(str.split, sep=":"),
         help="Preference order for dists.")
+    parser.add_argument(
+        "-n", "--no-license", action="store_false",
+        dest="license", default=True,
+        help="Don't include license file.")
     parser.add_argument(
         "-s", "--skipdeps", action="store_true",
         help="Don't generate PKGBUILD for dependencies.")
