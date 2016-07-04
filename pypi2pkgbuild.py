@@ -13,7 +13,7 @@ import shutil
 import subprocess
 from subprocess import CalledProcessError, DEVNULL, PIPE
 import sys
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 import urllib.request
 
 
@@ -352,7 +352,7 @@ class Package:
         else:
             if list(self._get_srctree().glob("**/*.pyx")):
                 self._arch = ["i686", "x86_64"]
-                self._makedepends.append(PackageRef("cython"))
+                self._makedepends.append(PackageRef("Cython"))
                 makedepends_cython = True
             if not "any" in archs and list(self._get_srctree().glob("**/*.c")):
                 # Don't bother checking for the presence of C sources if
@@ -368,7 +368,7 @@ class Package:
         #
         # To handle sdists that depend on numpy, we just see whether installing
         # in presence of numpy makes things better...
-        with TemporaryDirectory() as venvdir:
+        with TemporaryDirectory() as venvdir, NamedTemporaryFile("r") as log:
             script = (r"""
             pyvenv {venvdir}
             . {venvdir}/bin/activate
@@ -379,16 +379,21 @@ class Package:
             $INSTALL_CMD >/dev/null \
                 || (echo 'numpy' \
                     && pip install numpy >/dev/null \
-                    && $INSTALL_CMD >/dev/null)
+                    && $INSTALL_CMD >{log.name})
             pip show "$(pip freeze | cut -d= -f1 | grep -v '^Cython\|numpy$')" \
                 | grep -Po '(?<=^Requires:).*'
             """.format(
-                self=self,
                 venvdir=venvdir,
                 install_cython=("pip install cython >/dev/null"
                                 if makedepends_cython
-                                else "")))
-            process = _run_shell(["sh"], input=script, stdout=PIPE)
+                                else ""),
+                self=self,
+                log=log))
+            try:
+                process = _run_shell(["sh"], input=script, stdout=PIPE)
+            except CalledProcessError:
+                print(log.read(), file=sys.stderr)
+                raise
         depends = process.stdout[:-1].replace(",", " ").split()
         depends = list(  # Drop prefix duplicates.
             OrderedDict(zip(depends[::-1], [None] * len(depends))))[::-1]
