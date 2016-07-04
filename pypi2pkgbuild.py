@@ -5,9 +5,11 @@ from contextlib import suppress
 from functools import lru_cache, partial
 import hashlib
 from io import StringIO
+from itertools import repeat
 import json
 import logging
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
@@ -265,18 +267,16 @@ class Package:
 
         response = _pypi_request(name)
         self._data = response["info"]
-        self._version = version = self._data["version"]
 
-        LOGGER.info("Packaging %s %s", self.pkgname, version)
+        LOGGER.info("Packaging %s %s", self.pkgname, self._data["version"])
         self._urls = self._filter_and_sort_urls(response["urls"], prefer)
         if not self._urls:
             raise NoPackageError(
                 "No URL available for package {!r}.".format(self.pkgname))
 
-        self._find_arch_makedepends_depends()
-        self._licenses = []
-        if license:
-            self._find_license()
+        metadata = self._find_arch_makedepends_get_metadata()
+        self._depends = self._find_depends(metadata)
+        self._licenses = (self._find_license() if license else [])
 
         stream.write(PKGBUILD_HEADER.format(pkg=self, info=info))
         if self._urls[0]["packagetype"] == "bdist_wheel":
@@ -310,7 +310,7 @@ class Package:
             if url["packagetype"] == "bdist_wheel":
                 wheel_info = parse_wheel(url["path"])
                 assert (wheel_info.name == self._ref.wheel_name
-                        and wheel_info.version == self._version), \
+                        and wheel_info.version == self._data["version"]), \
                     "Unexpected wheel info: {}".format(wheel_info)
                 if wheel_info.py not in PY_TAGS:
                     continue
@@ -340,7 +340,7 @@ class Package:
         return Path(self._srctree.name,
                     "{0._ref.pypi_name}-{0.pkgver}".format(self))
 
-    def _find_arch_makedepends_depends(self):
+    def _find_arch_makedepends_get_metadata(self):
         self._arch = ["any"]
         self._makedepends = PackageRefList([PackageRef("pip")])
         makedepends_cython = False
@@ -366,41 +366,58 @@ class Package:
         # The package name may get denormalized ("_" -> "-") during installation
         # so we just look at whatever got installed.
         #
+        # `entry_points` is a generator, thus not json-serializable.
+        #
         # To handle sdists that depend on numpy, we just see whether installing
         # in presence of numpy makes things better...
-        with TemporaryDirectory() as venvdir, NamedTemporaryFile("r") as log:
+        with TemporaryDirectory() as venvdir, \
+                NamedTemporaryFile("r") as more_requires, \
+                NamedTemporaryFile("r") as log:
             script = (r"""
             pyvenv {venvdir}
             . {venvdir}/bin/activate
             export PIP_CONFIG_FILE=/dev/null
             pip install --upgrade pip >/dev/null
             {install_cython}
-            INSTALL_CMD='pip install --no-deps {self._ref.pypi_name}'
-            $INSTALL_CMD >/dev/null \
-                || (echo 'numpy' \
-                    && pip install numpy >/dev/null \
-                    && $INSTALL_CMD >{log.name})
-            pip show "$(pip freeze | cut -d= -f1 | grep -v '^Cython\|numpy$')" \
-                | grep -Po '(?<=^Requires:).*'
+            install_cmd() {{
+                pip install --no-deps {self._ref.pypi_name}
+            }}
+            show_cmd() {{
+                name="$(pip freeze | cut -d= -f1 | grep -v '^Cython\|numpy$')"
+                python -c \
+                    "import json, pip; info = next(pip.commands.show.search_packages_info(['$name'])); info.pop('entry_points', None); print(json.dumps(info))"
+            }}
+            if install_cmd >/dev/null; then
+                show_cmd
+            else
+                pip install numpy >/dev/null
+                echo numpy >>{more_requires.name}
+                install_cmd >{log.name}
+                show_cmd
+            fi
             """.format(
-                venvdir=venvdir,
+                self=self,
+                venvdir=venvdir, more_requires=more_requires, log=log,
                 install_cython=("pip install cython >/dev/null"
                                 if makedepends_cython
-                                else ""),
-                self=self,
-                log=log))
+                                else "")))
             try:
                 process = _run_shell(["sh"], input=script, stdout=PIPE)
             except CalledProcessError:
                 print(log.read(), file=sys.stderr)
                 raise
-        depends = process.stdout[:-1].replace(",", " ").split()
+            more_requires = more_requires.read().splitlines()
+        metadata = json.loads(process.stdout)
+        metadata["requires"].extend(more_requires)
+        return metadata
+
+    def _find_depends(self, metadata):
         depends = list(  # Drop prefix duplicates.
-            OrderedDict(zip(depends[::-1], [None] * len(depends))))[::-1]
-        self._depends = PackageRefList(PackageRef(depend) for depend in depends)
+            OrderedDict(zip(metadata["requires"][::-1], repeat(None))))[::-1]
+        return PackageRefList(PackageRef(depend) for depend in depends)
 
     def _find_license(self):
-        licenses = self._licenses
+        licenses = []
         license_classes = [
             classifier for classifier in self._data["classifiers"]
             if classifier.startswith("License :: ")
@@ -454,8 +471,10 @@ class Package:
                 else:
                     LOGGER.warning("Could not retrieve license file")
 
+        return licenses
+
     pkgname = property(lambda self: self._ref.pkgname)
-    pkgver = property(lambda self: shlex.quote(self._version))
+    pkgver = property(lambda self: shlex.quote(self._data["version"]))
     pkgdesc = property(lambda self: shlex.quote(self._data["summary"]))
     url = property(lambda self: shlex.quote(
         next(url for url in [self._data["home_page"],
