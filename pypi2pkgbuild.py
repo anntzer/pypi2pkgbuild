@@ -530,10 +530,17 @@ def create_package(name,
             "## EXTRA_DEPENDS ##",
             "depends+=({})".format(" ".join(extra_deps))))
     _run_shell("makepkg --force --repackage --nodeps", cwd=cwd)
-    # Python dependencies always get misanalyzed so we just filter them
-    # away; how to do this via a switch to namcap is not so clear.
+    # Python dependencies always get misanalyzed so we just filter them away.
+    # Extension modules unconditionally link to `libpthread` (see output of
+    # `python-config --libs`) so filter that away too.
+    # It would be preferable to use a `namcap` option instead, though.
     _run_shell(
-        "namcap {} | grep -v 'W: Dependency included and not needed' || true".
+        "namcap {} "
+        "| grep -v \"W: "
+            r"\(Dependency included and not needed"
+            r"\|Unused shared library '/usr/lib/libpthread\.so\.0'\)"
+        "\" "
+        "|| true".
         format(fullname.name),
         cwd=cwd)
     _run_shell("namcap PKGBUILD", cwd=cwd)
