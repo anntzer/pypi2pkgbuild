@@ -549,13 +549,20 @@ def find_outdated():
     names = [line.split()[0] for line in lines]
     locs = _run_shell("pip show {} | grep -Po '(?<=^Location: ).*'".
                       format(" ".join(names)), stdout=PIPE).stdout.splitlines()
+    owners = {}
     for line, name, loc in zip(lines, names, locs):
         if loc == syswide_location:
-            if _run_shell(
+            # [:-2]: pkgname, pkgver.
+            owner = " ".join(
+                _run_shell(
                     "pacman -Qo {}/{}-*".format(
                         syswide_location, name.replace("-", "_")),
-                    stdout=PIPE).stdout[:-1].endswith("-00"):
-                print(line)
+                    stdout=PIPE).stdout[:-1].split()[-2:])
+            owners.setdefault(owner, []).append(line)
+    for owner, lines in sorted(owners.items()):
+        print(owner)
+        for line in lines:
+            print("\t" + line)
 
 
 def main():
