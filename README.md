@@ -8,6 +8,8 @@ Convert PyPI entries to Arch Linux PKGBUILDs, inspired from
 PyPI package.  Because PyPI's dependencies are somewhat unreliable, it installs
 the package in a virtualenv to figure out the dependencies.
 
+A `-git` package can be built with `pypi2pkbguild.py git+https://...`.
+
 The package is then built and verified with `namcap`.
 
 The goal is to make this tool as automated as possible: if all the information

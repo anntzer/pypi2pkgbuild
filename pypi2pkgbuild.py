@@ -99,12 +99,12 @@ pkgname={pkg.pkgname}
 pkgver={pkg.pkgver}
 pkgrel=00
 pkgdesc={pkg.pkgdesc}
+arch=({pkg.arch})
 url={pkg.url}
+license=({pkg.license})
 depends=(python {pkg.depends})
 makedepends=({pkg.makedepends})
 checkdepends=({pkg.checkdepends})
-license=({pkg.license})
-arch=({pkg.arch})
 """
 
 SDIST_SOURCE = """\
@@ -131,6 +131,7 @@ md5sums+=({md5s})
 
 PKGBUILD_CONTENTS = """\
 ## EXTRA_DEPENDS ##
+conflicts=($(if [[ ${source[0]} =~ ^git+ ]]; then echo "$pkgname" | sed 's/-git$//'; fi))
 
 export PIP_CONFIG_FILE=/dev/null
 export PIP_DISABLE_PIP_VERSION_CHECK=true
@@ -141,12 +142,12 @@ _first_source() {
 }
 
 _is_wheel() {
-    [[ $(_first_source) =~ \.whl$ ]]
+    [[ $(_first_source) =~ \\.whl$ ]]
 }
 
 _dist_name() {
     dist_name="$(_first_source)"
-    for suffix in """ + " ".join(SDIST_SUFFIXES) + """; do
+    for suffix in """ + " ".join(SDIST_SUFFIXES) + """ .git; do
         dist_name="$(basename -s "$suffix" "$dist_name")"
     done
     echo "$dist_name"
@@ -163,6 +164,16 @@ _license_filename() {
         done
     fi
 }
+
+if [[ $(_first_source) =~ ^git+ ]]; then
+    pkgver() {
+        ( set -o pipefail
+          cd "$srcdir/$(_dist_name)"
+          git describe --long --tags 2>/dev/null | sed 's/\\([^-]*-g\\)/r\\1/;s/-/./g' ||
+          printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+        )
+    }
+fi
 
 build() {
     _is_wheel && return
@@ -192,7 +203,7 @@ package() {
     fi
 }
 
-. PKGBUILD_EXTRAS
+. "$(dirname "$BASH_SOURCE")/PKGBUILD_EXTRAS"
 """
 
 GITIGNORE = """\
@@ -218,20 +229,88 @@ class NoPackageError(Exception):
 
 
 @lru_cache()
-def _pypi_request(name):
-    try:
-        r = urllib.request.urlopen(
-            "https://pypi.python.org/pypi/{}/json".format(name))
-    except urllib.error.HTTPError:
-        raise NoPackageError("Package {!r} not found.".format(name))
-    return json.loads(r.read().decode(r.headers.get_param("charset")),
-                      object_pairs_hook=OrderedDict)
+def _get_metadata(name, makedepends_cython):
+    # Dependency resolution is done by installing the package in a venv and
+    # calling `pip show`; otherwise it would be necessary to parse environment
+    # markers (from `self._data["requires_dist"]`).  The package name may get
+    # denormalized ("_" -> "-") during installation so we just look at whatever
+    # got installed.
+    #
+    # `entry_points` is a generator, thus not json-serializable.
+    #
+    # To handle sdists that depend on numpy, we just see whether installing in
+    # presence of numpy makes things better...
+    with TemporaryDirectory() as venvdir, \
+            NamedTemporaryFile("r") as more_requires, \
+            NamedTemporaryFile("r") as log:
+        script = (r"""
+        pyvenv {venvdir}
+        . {venvdir}/bin/activate
+        export PIP_CONFIG_FILE=/dev/null
+        pip install --upgrade pip >/dev/null
+        pip install cython >/dev/null
+        install_cmd() {{
+            pip install --no-deps {name}
+        }}
+        show_cmd() {{
+            name="$(pip freeze | cut -d= -f1 | grep -v '^Cython\|numpy$')"
+            python -c \
+                "import json, pip; info = next(pip.commands.show.search_packages_info(['$name'])); info.pop('entry_points', None); print(json.dumps(info))"
+        }}
+        if install_cmd >/dev/null; then
+            show_cmd
+        else
+            pip install numpy >/dev/null
+            echo numpy >>{more_requires.name}
+            install_cmd >{log.name}
+            show_cmd
+        fi
+        """.format(
+            name=name, venvdir=venvdir, more_requires=more_requires, log=log,
+            install_cython=("pip install cython >/dev/null"
+                            if makedepends_cython
+                            else "")))
+        try:
+            process = _run_shell(["sh"], input=script, stdout=PIPE)
+        except CalledProcessError:
+            print(log.read(), file=sys.stderr)
+            raise
+        more_requires = more_requires.read().splitlines()
+    metadata = json.loads(process.stdout)
+    metadata["requires"].extend(more_requires)
+    return {key.replace("-", "_"): value for key, value in metadata.items()}
 
+
+@lru_cache()
+def _pypi_request(name):
+    if name.startswith("git+"):
+        return {"info": {"download_url": name[4:],  # Strip "git+".
+                         "home_page": name[4:],
+                         "package_url": name[4:],
+                         **_get_metadata(name, True)},
+                "urls": [{"packagetype": "sdist",
+                          "path": urllib.parse.urlparse(name).path,
+                          "url": name,
+                          "md5_digest": "SKIP"}],
+                "_pkgname_suffix": "-git"}
+    else:
+        try:
+            r = urllib.request.urlopen(
+                "https://pypi.python.org/pypi/{}/json".format(name))
+        except urllib.error.HTTPError:
+            raise NoPackageError("Package {!r} not found.".format(name))
+        # Load as OrderedDict so that always the same sdist is chosen if e.g.
+        # both zip and tgz are available.
+        request = json.loads(r.read().decode(r.headers.get_param("charset")),
+                            object_pairs_hook=OrderedDict)
+        request["_pkgname_suffix"] = ""
+        return request
 
 class PackageRef:
     def __init__(self, name):
+        request = _pypi_request(name)
         # Name on PyPI.
-        self.pypi_name = _pypi_request(name)["info"]["name"]
+        self.pypi_name = request["info"]["name"]
         # Name for wheels.
         self.wheel_name = self.pypi_name.replace("-", "_")
         # Name for Arch Linux.
@@ -243,7 +322,8 @@ class PackageRef:
                  self.wheel_name, sys.version_info)],
             stdout=PIPE, universal_newlines=True)
         if process.returncode:
-            self.pkgname = "python-{}".format(self.pypi_name.lower())
+            self.pkgname = "python-{}{}".format(
+                self.pypi_name.lower(), request["_pkgname_suffix"])
             self.exists = False
         else:
             self.pkgname = process.stdout[:-1]  # Strip newline.
@@ -274,7 +354,9 @@ class Package:
             raise NoPackageError(
                 "No URL available for package {!r}.".format(self.pkgname))
 
-        metadata = self._find_arch_makedepends_get_metadata()
+        self._find_arch_makedepends()
+        metadata = _get_metadata(
+            name, any(ref.pypi_name == "Cython" for ref in self._makedepends))
         self._depends = self._find_depends(metadata)
         self._licenses = (self._find_license() if license else [])
 
@@ -333,14 +415,21 @@ class Package:
         url = next(url for url in self._urls if url["packagetype"] == "sdist")
         if self._srctree is None:
             self._srctree = TemporaryDirectory()
-            r = urllib.request.urlopen(url["url"])
-            tmppath = Path(self._srctree.name, Path(url["path"]).name)
-            tmppath.write_bytes(r.read())
-            shutil.unpack_archive(str(tmppath), self._srctree.name)
-        return Path(self._srctree.name,
+            if urllib.parse.urlparse(url["url"]).scheme.startswith("git+"):
+                subprocess.run(
+                    ["git", "clone", url["url"][4:], self._srctree.name])
+                self._srctree.path = Path(self._srctree.name)
+            else:
+                r = urllib.request.urlopen(url["url"])
+                tmppath = Path(self._srctree.name, Path(url["path"]).name)
+                tmppath.write_bytes(r.read())
+                shutil.unpack_archive(str(tmppath), self._srctree.name)
+                self._srctree.path = Path(
+                    self._srctree.name,
                     "{0._ref.pypi_name}-{0.pkgver}".format(self))
+        return self._srctree.path
 
-    def _find_arch_makedepends_get_metadata(self):
+    def _find_arch_makedepends(self):
         self._arch = ["any"]
         self._makedepends = PackageRefList([PackageRef("pip")])
         makedepends_cython = False
@@ -359,57 +448,6 @@ class Package:
                 # there's an "any" wheel available; e.g. pexpect has a C source
                 # in its *tests*.
                 self._arch = ["i686", "x86_64"]
-
-        # Dependency resolution is done by installing the package in a venv
-        # and calling `pip show`; otherwise it would be necessary to parse
-        # environment markers (from `self._data["requires_dist"]`).
-        # The package name may get denormalized ("_" -> "-") during installation
-        # so we just look at whatever got installed.
-        #
-        # `entry_points` is a generator, thus not json-serializable.
-        #
-        # To handle sdists that depend on numpy, we just see whether installing
-        # in presence of numpy makes things better...
-        with TemporaryDirectory() as venvdir, \
-                NamedTemporaryFile("r") as more_requires, \
-                NamedTemporaryFile("r") as log:
-            script = (r"""
-            pyvenv {venvdir}
-            . {venvdir}/bin/activate
-            export PIP_CONFIG_FILE=/dev/null
-            pip install --upgrade pip >/dev/null
-            {install_cython}
-            install_cmd() {{
-                pip install --no-deps {self._ref.pypi_name}
-            }}
-            show_cmd() {{
-                name="$(pip freeze | cut -d= -f1 | grep -v '^Cython\|numpy$')"
-                python -c \
-                    "import json, pip; info = next(pip.commands.show.search_packages_info(['$name'])); info.pop('entry_points', None); print(json.dumps(info))"
-            }}
-            if install_cmd >/dev/null; then
-                show_cmd
-            else
-                pip install numpy >/dev/null
-                echo numpy >>{more_requires.name}
-                install_cmd >{log.name}
-                show_cmd
-            fi
-            """.format(
-                self=self,
-                venvdir=venvdir, more_requires=more_requires, log=log,
-                install_cython=("pip install cython >/dev/null"
-                                if makedepends_cython
-                                else "")))
-            try:
-                process = _run_shell(["sh"], input=script, stdout=PIPE)
-            except CalledProcessError:
-                print(log.read(), file=sys.stderr)
-                raise
-            more_requires = more_requires.read().splitlines()
-        metadata = json.loads(process.stdout)
-        metadata["requires"].extend(more_requires)
-        return metadata
 
     def _find_depends(self, metadata):
         depends = list(  # Drop prefix duplicates.
@@ -469,6 +507,9 @@ class Package:
                         self._files.update(LICENSE=path.read_bytes())
                         break
                 else:
+                    self._files.update(
+                        LICENSE=("LICENSE: " + ", ".join(licenses))
+                                .encode("ascii"))
                     LOGGER.warning("Could not retrieve license file")
 
         return licenses
@@ -544,8 +585,9 @@ def create_package(name,
         "grep -Po '(?<=E: Dependency ).*(?= detected and not included)'"
         "|| true".format(fullname.name),
         cwd=cwd, stdout=PIPE).stdout.splitlines()
+    # The contents of PKGBUILD may have been updated by `pkgver()`.
     Path(cwd, "PKGBUILD").write_text(
-        package.get_pkgbuild_contents().replace(
+        Path(cwd, "PKGBUILD").read_text().replace(
             "## EXTRA_DEPENDS ##",
             "depends+=({})".format(" ".join(extra_deps))))
     _run_shell("makepkg --force --repackage --nodeps", cwd=cwd)
