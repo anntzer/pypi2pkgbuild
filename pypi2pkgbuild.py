@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import abc
+from abc import ABC
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import namedtuple, OrderedDict
 from contextlib import suppress
@@ -93,11 +95,12 @@ TROVE_SPECIAL_LICENSES = {  # Standard licenses with specific line.
 }
 
 PKGBUILD_HEADER = """\
-# Maintainer: {info[maintainer]}
+# Maintainer: {config[maintainer]}
 
 pkgname={pkg.pkgname}
+epoch={pkg.epoch}
 pkgver={pkg.pkgver}
-pkgrel=00
+pkgrel={pkg.pkgrel}
 pkgdesc={pkg.pkgdesc}
 arch=({pkg.arch})
 url={pkg.url}
@@ -105,6 +108,7 @@ license=({pkg.license})
 depends=(python {pkg.depends})
 makedepends=({pkg.makedepends})
 checkdepends=({pkg.checkdepends})
+conflicts=()
 """
 
 SDIST_SOURCE = """\
@@ -131,7 +135,7 @@ md5sums+=({md5s})
 
 PKGBUILD_CONTENTS = """\
 ## EXTRA_DEPENDS ##
-conflicts=($(if [[ ${source[0]} =~ ^git+ ]]; then echo "$pkgname" | sed 's/-git$//'; fi))
+conflicts+=($(if [[ ${source[0]} =~ ^git+ ]]; then echo "$pkgname" | sed 's/-git$//'; fi))
 
 export PIP_CONFIG_FILE=/dev/null
 export PIP_DISABLE_PIP_VERSION_CHECK=true
@@ -206,6 +210,12 @@ package() {
 . "$(dirname "$BASH_SOURCE")/PKGBUILD_EXTRAS"
 """
 
+MULTIPKGBUILD_CONTENTS = """\
+package() {
+    true
+}
+"""
+
 GITIGNORE = """\
 *
 !.gitignore
@@ -215,8 +225,18 @@ GITIGNORE = """\
 """
 
 
-_run_shell = partial(subprocess.run,
-                     shell=True, check=True, universal_newlines=True)
+def _run_shell(*args, **kwargs):
+    kwargs = {"shell": True, "check": True, "universal_newlines": True,
+              **kwargs}
+    if "cwd" in kwargs:
+        kwargs["cwd"] = str(Path(kwargs["cwd"]))
+    return subprocess.run(*args, **kwargs)
+
+
+class ArchVersion(namedtuple("_ArchVersion", "epoch pkgver pkgrel")):
+    def __str__(self):
+        return ("{0.epoch}:{0.pkgver}-{0.pkgrel}" if self.epoch
+                else "{0.pkgver}-{0.pkgrel}").format(self)
 
 
 WheelInfo = namedtuple("WheelInfo", "name version py abi platform")
@@ -232,9 +252,9 @@ class PackagingError(Exception):
 def _get_metadata(name, makedepends_cython):
     # Dependency resolution is done by installing the package in a venv and
     # calling `pip show`; otherwise it would be necessary to parse environment
-    # markers (from `self._data["requires_dist"]`).  The package name may get
-    # denormalized ("_" -> "-") during installation so we just look at whatever
-    # got installed.
+    # markers (from "requires_dist").  The package name may get denormalized
+    # ("_" -> "-") during installation so we just look at whatever got
+    # installed.
     #
     # `entry_points` is a generator, thus not json-serializable.
     #
@@ -282,7 +302,7 @@ def _get_metadata(name, makedepends_cython):
 
 
 @lru_cache()
-def _pypi_request(name):
+def _get_pypi_info(name):
     if name.startswith("git+"):
         return {"info": {"download_url": name[4:],  # Strip "git+".
                          "home_page": name[4:],
@@ -306,35 +326,41 @@ def _pypi_request(name):
         request["_pkgname_suffix"] = ""
         return request
 
+
 class PackageRef:
-    def __init__(self, name):
-        request = _pypi_request(name)
-        # Name on PyPI.
-        self.pypi_name = request["info"]["name"]
-        # Name for wheels.
-        self.wheel_name = self.pypi_name.replace("-", "_")
+    def __init__(self, name, *, force_new=False):
+        self.orig_name = name  # A name or an URL.
+        self.info = _get_pypi_info(name)
+        self.pypi_name = self.info["info"]["name"] # Name on PyPI.
+        self.wheel_name = self.pypi_name.replace("-", "_") # Name for wheels.
         # Name for Arch Linux.
         # FIXME(?) Case ignored due to messed up packages such as "cycler" (on
         # PyPI as "Cycler").
-        process = subprocess.run(
-            ["pkgfile", "-rqi",
-             r"/{0}-.*py{1.major}\.{1.minor}\.egg-info".format(
-                 self.wheel_name, sys.version_info)],
-            stdout=PIPE, universal_newlines=True)
-        if process.returncode:
+        cmd = (r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
+               "| cut -f1 | uniq".format(
+                   self.wheel_name, sys.version_info))
+        process = _run_shell(
+            r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
+            "| cut -f1 | uniq".format(
+                self.wheel_name, sys.version_info),
+            stdout=PIPE)
+        if force_new or not process.stdout:
             self.pkgname = "python-{}{}".format(
-                self.pypi_name.lower(), request["_pkgname_suffix"])
+                self.pypi_name.lower(), self.info["_pkgname_suffix"])
+            self.arch_version = None
+            self.arch_packaged = []
             self.exists = False
         else:
             self.pkgname = pkgname = process.stdout[:-1]  # Strip newline.
+            self.pkgname, epoch, pkgver, pkgrel = (
+                re.fullmatch(r"[\w-]+/([\w-]+) (?:(.*):)?(.*)-(.*)\n",
+                             process.stdout).groups())
+            self.arch_version = ArchVersion(epoch or "", pkgver, pkgrel)
             packaged = _run_shell(
                 "pkgfile -l {} "
-                "| grep -Po '(?<=site-packages/).*(?=\.egg-info/?$)'".
+                "| grep -Po '(?<=site-packages/)[^-]*(?=.*\.egg-info/?$)'".
                 format(pkgname), stdout=PIPE).stdout.splitlines()
-            if len(packaged) > 1:
-                raise PackagingError(
-                    "Arch packages wrapping multiple Python packages are not "
-                    "supported.")
+            self.arch_packaged = packaged
             self.exists = True
 
 
@@ -345,30 +371,87 @@ class PackageRefList(list):
         return super().__format__(fmt)  # Raise TypeError.
 
 
-class Package:
-    def __init__(self, name, info, prefer, license):
+class _BasePackage(ABC):
+    def __init__(self):
+        self._files = OrderedDict()
+        # self._pkgbuild = ...
+
+    @abc.abstractmethod
+    def write_deps(self, base_path, *, force, prefer, license, makepkg):
+        pass
+
+    def write(self, base_path, *, force, makepkg):
+        cwd = base_path / self.pkgname
+        cwd.mkdir(parents=True, exist_ok=force)
+        _run_shell("git init .", cwd=cwd)
+        (cwd / ".gitignore").write_text(GITIGNORE)
+        (cwd / "PKGBUILD_EXTRAS").open("a").close()
+        (cwd / "PKGBUILD").write_text(self._pkgbuild)
+        for fname, content in self._files.items():
+            (cwd / fname).write_bytes(content)
+        cmd = ["makepkg",
+               *(["--force"] if force else []),
+               *shlex.split(makepkg)]
+        subprocess.run(cmd, check=True, cwd=str(cwd))
+        # Only one of the archs will be globbed successfully.
+        fullname, = sum(
+            (list(cwd.glob(fname + ".*"))
+             for fname in (
+                 _run_shell("makepkg --packagelist", cwd=str(cwd), stdout=PIPE).
+                 stdout.splitlines())),
+            [])
+        extra_deps = _run_shell(
+            "namcap {} | "
+            "grep -Po '(?<=E: Dependency ).*(?= detected and not included)'"
+            "|| true".format(fullname.name),
+            cwd=cwd, stdout=PIPE).stdout.splitlines()
+        # The contents of PKGBUILD may have been updated by `pkgver()`.
+        (cwd / "PKGBUILD").write_text(
+            (cwd / "PKGBUILD").read_text().replace(
+                "## EXTRA_DEPENDS ##",
+                "depends+=({})".format(" ".join(extra_deps))))
+        _run_shell("makepkg --force --repackage --nodeps", cwd=cwd)
+        # Python dependencies always get misanalyzed so we just filter them
+        # away.  Extension modules unconditionally link to `libpthread` (see
+        # output of `python-config --libs`) so filter that away too.  It would
+        # be preferable to use a `namcap` option instead, though.
+        _run_shell(
+            "namcap {} "
+            "| grep -v \"W: "
+                r"\(Dependency included and not needed"
+                r"\|Unused shared library '/usr/lib/libpthread\.so\.0'\)"
+            "\" "
+            "|| true".
+            format(fullname.name),
+            cwd=cwd)
+        _run_shell("namcap PKGBUILD", cwd=cwd)
+        _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
+
+
+class Package(_BasePackage):
+    def __init__(self, ref, config, prefer, license):
+        super().__init__()
+
+        self._ref = ref
+
         stream = StringIO()
         self._srctree = None
-        self._files = OrderedDict()
 
-        self._ref = PackageRef(name)
-
-        response = _pypi_request(name)
-        self._data = response["info"]
-
-        LOGGER.info("Packaging %s %s", self.pkgname, self._data["version"])
-        self._urls = self._filter_and_sort_urls(response["urls"], prefer)
+        LOGGER.info("Packaging %s %s",
+                    self.pkgname, ref.info["info"]["version"])
+        self._urls = self._filter_and_sort_urls(ref.info["urls"], prefer)
         if not self._urls:
             raise PackagingError(
                 "No URL available for package {!r}.".format(self.pkgname))
 
         self._find_arch_makedepends()
         metadata = _get_metadata(
-            name, any(ref.pypi_name == "Cython" for ref in self._makedepends))
+            ref.orig_name,
+            any(ref.pypi_name == "Cython" for ref in self._makedepends))
         self._depends = self._find_depends(metadata)
         self._licenses = (self._find_license() if license else [])
 
-        stream.write(PKGBUILD_HEADER.format(pkg=self, info=info))
+        stream.write(PKGBUILD_HEADER.format(pkg=self, config=config))
         if self._urls[0]["packagetype"] == "bdist_wheel":
             # Either just "any", or some specific archs.
             for url in self._urls:
@@ -399,8 +482,10 @@ class Package:
         for url in unfiltered_urls:
             if url["packagetype"] == "bdist_wheel":
                 wheel_info = parse_wheel(url["path"])
-                assert (wheel_info.name == self._ref.wheel_name
-                        and wheel_info.version == self._data["version"]), \
+                assert ((wheel_info.name,
+                         wheel_info.version)
+                        == (self._ref.wheel_name,
+                            self._ref.info["info"]["version"])), \
                     "Unexpected wheel info: {}".format(wheel_info)
                 if wheel_info.py not in PY_TAGS:
                     continue
@@ -463,9 +548,10 @@ class Package:
         return PackageRefList(PackageRef(depend) for depend in depends)
 
     def _find_license(self):
+        info = self._ref.info["info"]
         licenses = []
         license_classes = [
-            classifier for classifier in self._data["classifiers"]
+            classifier for classifier in info["classifiers"]
             if classifier.startswith("License :: ")
                and classifier != "License :: OSI Approved"]  # What's that?...
         if license_classes:
@@ -477,15 +563,15 @@ class Package:
                          **TROVE_SPECIAL_LICENSES}[license_class])
                 except KeyError:
                     licenses.append("custom:{}".format(license_class))
-        elif self._data["license"] not in [None, "UNKNOWN"]:
-            licenses.append("custom:{}".format(self._data["license"]))
+        elif info["license"] not in [None, "UNKNOWN"]:
+            licenses.append("custom:{}".format(info["license"]))
         else:
             LOGGER.warning("No license information available")
             licenses.append("custom:unknown")
 
         _license_found = False
         if any(license not in TROVE_COMMON_LICENSES for license in licenses):
-            for url in [self._data["download_url"], self._data["home_page"]]:
+            for url in [info["download_url"], info["home_page"]]:
                 parse = urllib.parse.urlparse(url or "")  # Could be None.
                 if len(Path(parse.path).parts) != 3:  # ["/", user, name]
                     continue
@@ -522,27 +608,108 @@ class Package:
 
         return licenses
 
-    pkgname = property(lambda self: self._ref.pkgname)
-    pkgver = property(lambda self: shlex.quote(self._data["version"]))
-    pkgdesc = property(lambda self: shlex.quote(self._data["summary"]))
-    url = property(lambda self: shlex.quote(
-        next(url for url in [self._data["home_page"],
-                             self._data["download_url"],
-                             self._data["package_url"]]
-             if url not in [None, "UNKNOWN"])))
-    depends = property(lambda self: self._depends)
-    makedepends = property(lambda self: self._makedepends)
-    checkdepends = property(lambda self: PackageRefList())
-    license = property(lambda self: " ".join(map(shlex.quote, self._licenses)))
-    arch = property(lambda self: " ".join(self._arch))
+    pkgname = property(
+        lambda self: self._ref.pkgname)
+    epoch = property(
+        lambda self: "")
+    pkgver = property(
+        lambda self: shlex.quote(self._ref.info["info"]["version"]))
+    pkgrel = property(
+        lambda self: "00")
+    pkgdesc = property(
+        lambda self: shlex.quote(self._ref.info["info"]["summary"]))
+    arch = property(
+        lambda self: " ".join(self._arch))
+    url = property(
+        lambda self: shlex.quote(
+            next(url for url in [self._ref.info["info"]["home_page"],
+                                 self._ref.info["info"]["download_url"],
+                                 self._ref.info["info"]["package_url"]]
+                 if url not in [None, "UNKNOWN"])))
+    license = property(
+        lambda self: " ".join(map(shlex.quote, self._licenses)))
+    depends = property(
+        lambda self: self._depends)
+    makedepends = property(
+        lambda self: self._makedepends)
+    checkdepends = property(
+        lambda self: PackageRefList())
 
-    def get_pkgbuild_contents(self):
-        return self._pkgbuild
+    def write_deps(self, base_path, *, force, prefer, license, makepkg):
+        for ref in self._depends:
+            if not ref.exists:
+                # Dependency not found, build it too.
+                create_package(
+                    ref.pypi_name, force=force, prefer=prefer, license=license,
+                    makepkg=makepkg, base_path=base_path)
 
-    def get_files(self):
-        return self._files
+
+class MultiPackage(_BasePackage):
+    def __init__(self, ref, config, prefer, license):
+        super().__init__()
+        self._ref = ref
+        self._arch_depends = PackageRefList(
+            Package(PackageRef(name, force_new=True), config, prefer, license)
+            for name in ref.arch_packaged)
+        self._arch_version = self._ref.arch_version._replace(
+            pkgrel=self._ref.arch_version.pkgrel + ".99")
+        for pkg in self._arch_depends:
+            pkg._pkgbuild = pkg._pkgbuild.replace(
+                "conflicts=()",
+                "conflicts=('{0}<{1}' '{0}>{1}')".format(
+                    ref.pkgname, self._arch_version),
+                1)
+        self._pkgbuild = (
+            PKGBUILD_HEADER.format(pkg=self, config=config) +
+            MULTIPKGBUILD_CONTENTS)
+
+    pkgname = property(
+        lambda self: self._ref.pkgname)
+    epoch = property(
+        lambda self: self._arch_version.epoch)
+    pkgver = property(
+        lambda self: self._arch_version.pkgver)
+    pkgrel = property(
+        lambda self: self._arch_version.pkgrel)
+    pkgdesc = property(
+        lambda self: "'A wrapper package.'")
+    arch = property(
+        lambda self: "any")
+    url = property(
+        lambda self: "N/A")
+    license = property(
+        lambda self: "CCPL:by")  # Individual components retain their license.
+    depends = property(
+        lambda self: self._arch_depends)
+    makedepends = property(
+        lambda self: PackageRefList())
+    checkdepends = property(
+        lambda self: PackageRefList())
+
+    def _get_target_path(self, base_path):
+        return base_path / ("meta:" + self._ref.pkgname)
+
+    def write_deps(self, base_path, *, force, prefer, license, makepkg):
+        target_path = self._get_target_path(base_path)
+        for pkg in self._arch_depends:
+            pkg.write_deps(target_path, force=force, prefer=prefer,
+                           license=license, makepkg=makepkg)
+            pkg.write(target_path, force=force, makepkg=makepkg)
+
+    def write(self, base_path, *, force, makepkg):
+        target_path = self._get_target_path(base_path)
+        super().write(target_path, force=force, makepkg=makepkg)
 
 
+def dispatch_package_builder(name, config, prefer, license):
+    ref = PackageRef(name)
+    if len(ref.arch_packaged) <= 1:
+        return Package(ref, config, prefer, license)
+    else:
+        return MultiPackage(ref, config, prefer, license)
+
+
+@lru_cache()
 def get_config():
     with TemporaryDirectory() as tmpdir:
         mini_pkgbuild = ('pkgver=0\npkgrel=0\narch=(any)\n'
@@ -554,66 +721,23 @@ def get_config():
     return {"maintainer": maintainer}
 
 
-def create_package(name,
-                   force=False,
-                   prefer=False,
-                   license=True,
-                   skipdeps=False,
-                   makepkg="--cleanbuild --nodeps"):
+def create_package(
+        name,
+        force=False,
+        prefer=False,
+        license=True,
+        skipdeps=False,
+        makepkg="--cleanbuild --nodeps",
+        base_path=None):
 
-    package = Package(name, get_config(), prefer=prefer, license=license)
+    pkg = dispatch_package_builder(
+        name, get_config(), prefer=prefer, license=license)
 
-    if not skipdeps:
-        for ref in package._depends:
-            if not ref.exists:
-                # Dependency not found, build it too.
-                create_package(ref.pypi_name, force=force, prefer=prefer,
-                               license=license, makepkg=makepkg)
-
-    cwd = package.pkgname
-    Path(cwd).mkdir(parents=True, exist_ok=force)
-    _run_shell("git init .", cwd=cwd)
-    Path(cwd, ".gitignore").write_text(GITIGNORE)
-    Path(cwd, "PKGBUILD_EXTRAS").open("a").close()
-    Path(cwd, "PKGBUILD").write_text(package.get_pkgbuild_contents())
-    for fname, content in package.get_files().items():
-        Path(cwd, fname).write_bytes(content)
-    cmd = ["makepkg",
-           *(["--force"] if force else []),
-           *shlex.split(makepkg)]
-    subprocess.run(cmd, check=True, cwd=cwd)
-    # Only one of the archs will be globbed successfully.
-    fullname, = sum(
-        (list(Path(cwd).glob(fname + ".*"))
-         for fname in (_run_shell("makepkg --packagelist", cwd=cwd, stdout=PIPE).
-                       stdout.splitlines())),
-        [])
-    extra_deps = _run_shell(
-        "namcap {} | "
-        "grep -Po '(?<=E: Dependency ).*(?= detected and not included)'"
-        "|| true".format(fullname.name),
-        cwd=cwd, stdout=PIPE).stdout.splitlines()
-    # The contents of PKGBUILD may have been updated by `pkgver()`.
-    Path(cwd, "PKGBUILD").write_text(
-        Path(cwd, "PKGBUILD").read_text().replace(
-            "## EXTRA_DEPENDS ##",
-            "depends+=({})".format(" ".join(extra_deps))))
-    _run_shell("makepkg --force --repackage --nodeps", cwd=cwd)
-    # Python dependencies always get misanalyzed so we just filter them away.
-    # Extension modules unconditionally link to `libpthread` (see output of
-    # `python-config --libs`) so filter that away too.
-    # It would be preferable to use a `namcap` option instead, though.
-    _run_shell(
-        "namcap {} "
-        "| grep -v \"W: "
-            r"\(Dependency included and not needed"
-            r"\|Unused shared library '/usr/lib/libpthread\.so\.0'\)"
-        "\" "
-        "|| true".
-        format(fullname.name),
-        cwd=cwd)
-    _run_shell("namcap PKGBUILD", cwd=cwd)
-    _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
+    if base_path is None:
+        base_path = Path()
+    pkg.write_deps(
+        base_path, force=force, prefer=prefer, license=license, makepkg=makepkg)
+    pkg.write(base_path, force=force, makepkg=makepkg)
 
 
 def find_outdated():

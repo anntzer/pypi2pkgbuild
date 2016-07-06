@@ -38,6 +38,28 @@ Improvements over pip2arch
 - Automatically builds the package (with options given in `--makepkg=...`) and
   run `namcap`.
 
+Vendored packages
+-----------------
+
+Some Arch packages (e.g. `ipython`) include a number of smaller PyPI packages.
+
+Because it is not possible to assign a meaningful version automatically, we
+instead create an independent Arch package for each of the PyPI packages
+and a master package (with `pkgrel` equal to the upstream `pkgrel.99`) that
+depends on all of them.  All these packages `conflict` with all versions of the
+upstream package (except the newly created package), so updating should work
+fine when the upstream package is actually updated.
+
+However, dependencies are still expressed using the master package, so
+internal dependencies may appear as circular or repeated.
+
+All the packages are placed in a subfolder named `meta:$pkgname`, so one can
+easily install everything by `cd`'ing there and running
+```
+    $ sudo pacman -U --asdeps **/*.xz
+    $ sudo pacman -D --asexplicit $pkgname/$pkgname.tar.xz
+```
+
 Dependencies
 ------------
 
