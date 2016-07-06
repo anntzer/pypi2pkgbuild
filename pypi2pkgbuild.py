@@ -224,7 +224,7 @@ def parse_wheel(fname):
     return WheelInfo(*Path(fname).stem.split("-"))
 
 
-class NoPackageError(Exception):
+class PackagingError(Exception):
     pass
 
 
@@ -298,7 +298,7 @@ def _pypi_request(name):
             r = urllib.request.urlopen(
                 "https://pypi.python.org/pypi/{}/json".format(name))
         except urllib.error.HTTPError:
-            raise NoPackageError("Package {!r} not found.".format(name))
+            raise PackagingError("Package {!r} not found.".format(name))
         # Load as OrderedDict so that always the same sdist is chosen if e.g.
         # both zip and tgz are available.
         request = json.loads(r.read().decode(r.headers.get_param("charset")),
@@ -326,7 +326,15 @@ class PackageRef:
                 self.pypi_name.lower(), request["_pkgname_suffix"])
             self.exists = False
         else:
-            self.pkgname = process.stdout[:-1]  # Strip newline.
+            self.pkgname = pkgname = process.stdout[:-1]  # Strip newline.
+            packaged = _run_shell(
+                "pkgfile -l {} "
+                "| grep -Po '(?<=site-packages/).*(?=\.egg-info/?$)'".
+                format(pkgname), stdout=PIPE).stdout.splitlines()
+            if len(packaged) > 1:
+                raise PackagingError(
+                    "Arch packages wrapping multiple Python packages are not "
+                    "supported.")
             self.exists = True
 
 
@@ -351,7 +359,7 @@ class Package:
         LOGGER.info("Packaging %s %s", self.pkgname, self._data["version"])
         self._urls = self._filter_and_sort_urls(response["urls"], prefer)
         if not self._urls:
-            raise NoPackageError(
+            raise PackagingError(
                 "No URL available for package {!r}.".format(self.pkgname))
 
         self._find_arch_makedepends()
@@ -686,7 +694,7 @@ def main():
             parser.error("error: the following arguments are required: name")
         try:
             create_package(**vars(args))
-        except NoPackageError as e:
+        except PackagingError as e:
             print(e, file=sys.stderr)
             sys.exit(1)
 
