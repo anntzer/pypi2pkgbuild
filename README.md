@@ -66,3 +66,11 @@ Dependencies
 - Python 3.5+
 - `pkgfile` (to check which dependencies are already available as official
   packages)
+
+Installation
+------------
+
+`pip install .`, or just run the script directly.
+
+You can even run PyPI2PKGBUILD on itself to create a proper Arch package
+(`pypi2pkgbuild.py git+https://github.com/anntzer/pypi2pkgbuild`)...
