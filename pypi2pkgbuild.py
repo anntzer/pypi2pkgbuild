@@ -597,7 +597,7 @@ class Package(_BasePackage):
             else:
                 for path in (self._get_srctree() / license_name
                              for license_name in LICENSE_NAMES):
-                    if path.exists():
+                    if path.is_file():
                         self._files.update(LICENSE=path.read_bytes())
                         break
                 else:

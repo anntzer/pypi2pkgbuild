@@ -16,13 +16,11 @@ Remaining manual packages
 =========================
 
 - Licensing issues:
-    - `profilehooks`: need scraping to find link to Github (MIT)
     - `versioneer`: no classifier (public domain)
 
 - Undeclared dependencies:
-    - `gatspy`
     - `hmmlearn`
-    - `nitime`
+    - `nitime` (still uses `distutils`...)
     - `supersmoother`
 
 - `ctypes`-loaded binary dependencies.
