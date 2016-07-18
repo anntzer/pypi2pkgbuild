@@ -377,10 +377,10 @@ class _BasePackage(ABC):
         # self._pkgbuild = ...
 
     @abc.abstractmethod
-    def write_deps(self, base_path, *, force, prefer, license, makepkg):
+    def write_deps_to(self, base_path, *, force, prefer, license, makepkg):
         pass
 
-    def write(self, base_path, *, force, makepkg):
+    def write_to(self, base_path, *, force, makepkg):
         cwd = base_path / self.pkgname
         cwd.mkdir(parents=True, exist_ok=force)
         _run_shell("git init .", cwd=cwd)
@@ -635,7 +635,7 @@ class Package(_BasePackage):
     checkdepends = property(
         lambda self: PackageRefList())
 
-    def write_deps(self, base_path, *, force, prefer, license, makepkg):
+    def write_deps_to(self, base_path, *, force, prefer, license, makepkg):
         for ref in self._depends:
             if not ref.exists:
                 # Dependency not found, build it too.
@@ -689,16 +689,16 @@ class MultiPackage(_BasePackage):
     def _get_target_path(self, base_path):
         return base_path / ("meta:" + self._ref.pkgname)
 
-    def write_deps(self, base_path, *, force, prefer, license, makepkg):
+    def write_deps_to(self, base_path, *, force, prefer, license, makepkg):
         target_path = self._get_target_path(base_path)
         for pkg in self._arch_depends:
-            pkg.write_deps(target_path, force=force, prefer=prefer,
-                           license=license, makepkg=makepkg)
-            pkg.write(target_path, force=force, makepkg=makepkg)
+            pkg.write_deps_to(target_path, force=force, prefer=prefer,
+                              license=license, makepkg=makepkg)
+            pkg.write_to(target_path, force=force, makepkg=makepkg)
 
-    def write(self, base_path, *, force, makepkg):
+    def write_to(self, base_path, *, force, makepkg):
         target_path = self._get_target_path(base_path)
-        super().write(target_path, force=force, makepkg=makepkg)
+        super().write_to(target_path, force=force, makepkg=makepkg)
 
 
 def dispatch_package_builder(name, config, prefer, license):
@@ -735,9 +735,9 @@ def create_package(
 
     if base_path is None:
         base_path = Path()
-    pkg.write_deps(
+    pkg.write_deps_to(
         base_path, force=force, prefer=prefer, license=license, makepkg=makepkg)
-    pkg.write(base_path, force=force, makepkg=makepkg)
+    pkg.write_to(base_path, force=force, makepkg=makepkg)
 
 
 def find_outdated():
