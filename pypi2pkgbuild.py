@@ -377,7 +377,7 @@ class _BasePackage(ABC):
         # self._pkgbuild = ...
 
     @abc.abstractmethod
-    def write_deps_to(self, base_path, *, force, prefer, license, makepkg):
+    def write_deps_to(self, base_path, *, force, prefer, makepkg):
         pass
 
     def write_to(self, base_path, *, force, makepkg):
@@ -429,7 +429,7 @@ class _BasePackage(ABC):
 
 
 class Package(_BasePackage):
-    def __init__(self, ref, config, prefer, license):
+    def __init__(self, ref, config, prefer):
         super().__init__()
 
         self._ref = ref
@@ -449,7 +449,7 @@ class Package(_BasePackage):
             ref.orig_name,
             any(ref.pypi_name == "Cython" for ref in self._makedepends))
         self._depends = self._find_depends(metadata)
-        self._licenses = (self._find_license() if license else [])
+        self._licenses = self._find_license()
 
         stream.write(PKGBUILD_HEADER.format(pkg=self, config=config))
         if self._urls[0]["packagetype"] == "bdist_wheel":
@@ -635,21 +635,20 @@ class Package(_BasePackage):
     checkdepends = property(
         lambda self: PackageRefList())
 
-    def write_deps_to(self, base_path, *, force, prefer, license, makepkg):
+    def write_deps_to(self, base_path, *, force, prefer, makepkg):
         for ref in self._depends:
             if not ref.exists:
                 # Dependency not found, build it too.
-                create_package(
-                    ref.pypi_name, force=force, prefer=prefer, license=license,
-                    makepkg=makepkg, base_path=base_path)
+                create_package(ref.pypi_name, force=force, prefer=prefer,
+                               makepkg=makepkg, base_path=base_path)
 
 
 class MultiPackage(_BasePackage):
-    def __init__(self, ref, config, prefer, license):
+    def __init__(self, ref, config, prefer):
         super().__init__()
         self._ref = ref
         self._arch_depends = PackageRefList(
-            Package(PackageRef(name, force_new=True), config, prefer, license)
+            Package(PackageRef(name, force_new=True), config, prefer)
             for name in ref.arch_packaged)
         self._arch_version = self._ref.arch_version._replace(
             pkgrel=self._ref.arch_version.pkgrel + ".99")
@@ -689,11 +688,11 @@ class MultiPackage(_BasePackage):
     def _get_target_path(self, base_path):
         return base_path / ("meta:" + self._ref.pkgname)
 
-    def write_deps_to(self, base_path, *, force, prefer, license, makepkg):
+    def write_deps_to(self, base_path, *, force, prefer, makepkg):
         target_path = self._get_target_path(base_path)
         for pkg in self._arch_depends:
-            pkg.write_deps_to(target_path, force=force, prefer=prefer,
-                              license=license, makepkg=makepkg)
+            pkg.write_deps_to(
+                target_path, force=force, prefer=prefer, makepkg=makepkg)
             pkg.write_to(target_path, force=force, makepkg=makepkg)
 
     def write_to(self, base_path, *, force, makepkg):
@@ -701,12 +700,10 @@ class MultiPackage(_BasePackage):
         super().write_to(target_path, force=force, makepkg=makepkg)
 
 
-def dispatch_package_builder(name, config, prefer, license):
+def dispatch_package_builder(name, config, prefer):
     ref = PackageRef(name)
-    if len(ref.arch_packaged) <= 1:
-        return Package(ref, config, prefer, license)
-    else:
-        return MultiPackage(ref, config, prefer, license)
+    cls = Package if len(ref.arch_packaged) <= 1 else MultiPackage
+    return cls(ref, config, prefer)
 
 
 @lru_cache()
@@ -725,18 +722,15 @@ def create_package(
         name,
         force=False,
         prefer=False,
-        license=True,
         skipdeps=False,
         makepkg="--cleanbuild --nodeps",
         base_path=None):
 
-    pkg = dispatch_package_builder(
-        name, get_config(), prefer=prefer, license=license)
+    pkg = dispatch_package_builder(name, get_config(), prefer=prefer)
 
     if base_path is None:
         base_path = Path()
-    pkg.write_deps_to(
-        base_path, force=force, prefer=prefer, license=license, makepkg=makepkg)
+    pkg.write_deps_to(base_path, force=force, prefer=prefer, makepkg=makepkg)
     pkg.write_to(base_path, force=force, makepkg=makepkg)
 
 
@@ -793,10 +787,6 @@ def main():
         default="anywheel:sdist:manylinuxwheel",
         type=partial(str.split, sep=":"),
         help="Preference order for dists.")
-    parser.add_argument(
-        "-n", "--no-license", action="store_false",
-        dest="license", default=True,
-        help="Don't include license file.")
     parser.add_argument(
         "-s", "--skipdeps", action="store_true",
         help="Don't generate PKGBUILD for dependencies.")
