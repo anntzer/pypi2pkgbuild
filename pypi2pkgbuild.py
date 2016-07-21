@@ -727,10 +727,11 @@ def create_package(
         base_path=None):
 
     pkg = dispatch_package_builder(name, get_config(), prefer=prefer)
-
     if base_path is None:
         base_path = Path()
-    pkg.write_deps_to(base_path, force=force, prefer=prefer, makepkg=makepkg)
+    if not skipdeps:
+        pkg.write_deps_to(
+            base_path, force=force, prefer=prefer, makepkg=makepkg)
     pkg.write_to(base_path, force=force, makepkg=makepkg)
 
 

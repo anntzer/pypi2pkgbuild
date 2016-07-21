@@ -13,6 +13,8 @@ Issues
 - Incomplete support for licences.
     - e.g. `matplotlib` has a `LICENSE` *folder*.
 
+- Avoid double cloning of `git` packages (by manual caching).
+
 Remaining manual packages
 =========================
 
