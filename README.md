@@ -37,6 +37,7 @@ Improvements over pip2arch
   applicable.
 - Automatically builds the package (with options given in `--makepkg=...`) and
   run `namcap`.
+- Automatically builds all outdated dependencies via `-O`.
 
 Vendored packages
 -----------------

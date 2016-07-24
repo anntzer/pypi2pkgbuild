@@ -4,7 +4,7 @@ from abc import ABC
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import namedtuple, OrderedDict
 from contextlib import suppress
-from functools import lru_cache, partial
+from functools import lru_cache
 import hashlib
 from io import StringIO
 from itertools import repeat
@@ -372,6 +372,8 @@ class PackageRefList(list):
 
 
 class _BasePackage(ABC):
+    build_cache = []
+
     def __init__(self):
         self._files = OrderedDict()
         # self._pkgbuild = ...
@@ -397,7 +399,7 @@ class _BasePackage(ABC):
         fullname, = sum(
             (list(cwd.glob(fname + ".*"))
              for fname in (
-                 _run_shell("makepkg --packagelist", cwd=str(cwd), stdout=PIPE).
+                 _run_shell("makepkg --packagelist", cwd=cwd, stdout=PIPE).
                  stdout.splitlines())),
             [])
         extra_deps = _run_shell(
@@ -426,6 +428,7 @@ class _BasePackage(ABC):
             cwd=cwd)
         _run_shell("namcap PKGBUILD", cwd=cwd)
         _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
+        type(self).build_cache.append(fullname)
 
 
 class Package(_BasePackage):
@@ -482,6 +485,7 @@ class Package(_BasePackage):
         for url in unfiltered_urls:
             if url["packagetype"] == "bdist_wheel":
                 wheel_info = parse_wheel(url["path"])
+                # FIXME[Upstream] pypa/pypi-legacy#486
                 assert ((wheel_info.name,
                          wheel_info.version)
                         == (self._ref.wheel_name,
@@ -747,17 +751,25 @@ def find_outdated():
     owners = {}
     for line, name, loc in zip(lines, names, locs):
         if loc == syswide_location:
-            # [:-2]: pkgname, pkgver.
-            owner = " ".join(
-                _run_shell(
-                    "pacman -Qo {}/{}-*".format(
-                        syswide_location, name.replace("-", "_")),
-                    stdout=PIPE).stdout[:-1].split()[-2:])
-            owners.setdefault(owner, []).append(line)
+            *_, pkgname, pkgver_full = _run_shell(
+                "pacman -Qo {}/{}-*".format(
+                    syswide_location, name.replace("-", "_")),
+                stdout=PIPE).stdout[:-1].split()
+            # Check that pypi's version is indeed newer.  Some packages
+            # mis-report their version to pip (e.g., slicerator 0.9.7's Github
+            # release).
+            # FIXME(?) Emit a warning?  How does this behave on metapackages?
+            pkgver, pkgrel = pkgver_full.split("-")
+            *_, pypi_ver, pypi_type = line.split()
+            if pkgver == pypi_ver:
+                continue
+            owners.setdefault("{} {}".format(pkgname, pkgver_full),
+                              []).append(line)
     for owner, lines in sorted(owners.items()):
         print(owner)
         for line in lines:
             print("\t" + line)
+    return owners
 
 
 def main():
@@ -778,15 +790,18 @@ def main():
         "name", nargs="?",
         help="The PyPI package name.")
     parser.add_argument(
-        "-o", "--outdated", action="store_true",
-        help="Find outdated automatic packages.")
+        "-o", "--outdated", action="store_true", default=False,
+        help="Find outdated packages.")
+    parser.add_argument(
+        "-O", "--outdated-update", action="store_true", default=False,
+        help="Find and build outdated packages.")
     parser.add_argument(
         "-f", "--force", action="store_true",
         help="Overwrite a previously existing PKGBUILD.")
     parser.add_argument(
         "-p", "--prefer", metavar="P",
         default="anywheel:sdist:manylinuxwheel",
-        type=partial(str.split, sep=":"),
+        type=lambda s: s.split(":"),
         help="Preference order for dists.")
     parser.add_argument(
         "-s", "--skipdeps", action="store_true",
@@ -797,22 +812,35 @@ def main():
         help="Additional arguments to pass to makepkg.")
     args = parser.parse_args()
 
-    if args.outdated:
+    if args.outdated or args.outdated_update:
         if args.name:
-            parser.error("--outdated should be given alone.")
+            parser.error("--outdated{,-update} should be given with no name.")
+        owners = find_outdated()
+        if args.outdated_update:
+            for line in sum(owners.values(), []):
+                name, *_ = line.split()
+                kwargs = {**vars(args), "name": name}
+                del kwargs["outdated"], kwargs["outdated_update"]
+                create_package(**kwargs)
         else:
-            find_outdated()
+            return
 
     else:
-        del args.outdated
         if not args.name:
             parser.error("error: the following arguments are required: name")
         try:
-            create_package(**vars(args))
+            kwargs = vars(args)
+            del kwargs["outdated"], kwargs["outdated_update"]
+            create_package(**kwargs)
         except PackagingError as e:
             print(e, file=sys.stderr)
-            sys.exit(1)
+            return 1
+
+    cmd = "sudo pacman -U {}".format(" ".join(map(str, Package.build_cache)))
+    print()
+    print(cmd)
+    _run_shell(cmd, check=False)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
