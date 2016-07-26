@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 import abc
 from abc import ABC
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+from argparse import (ArgumentParser, ArgumentDefaultsHelpFormatter,
+                      RawDescriptionHelpFormatter)
 from collections import namedtuple, OrderedDict
 from contextlib import suppress
 from functools import lru_cache
@@ -10,6 +11,7 @@ from io import StringIO
 from itertools import repeat
 import json
 import logging
+import os
 from pathlib import Path
 import re
 import shlex
@@ -772,6 +774,13 @@ def find_outdated():
     return owners
 
 
+_description = """\
+Create a PKGBUILD for a PyPI package and run makepkg.
+
+Default arguments can be set in the PYPI2PKGBUILD_ARGS environment variable.
+"""
+
+
 def main():
     try:
         _run_shell("pkgfile pkgfile", stdout=DEVNULL)
@@ -784,8 +793,9 @@ def main():
 
     logging.basicConfig(level="INFO")
     parser = ArgumentParser(
-        description="Create a PKGBUILD for a PyPI package and run makepkg.",
-        formatter_class=ArgumentDefaultsHelpFormatter)
+        description=_description,
+        formatter_class=type("", (RawDescriptionHelpFormatter,
+                                  ArgumentDefaultsHelpFormatter), {}))
     parser.add_argument(
         "name", nargs="?",
         help="The PyPI package name.")
@@ -795,6 +805,9 @@ def main():
     parser.add_argument(
         "-O", "--outdated-update", action="store_true", default=False,
         help="Find and build outdated packages.")
+    parser.add_argument(
+        "-b", "--base-path",
+        help="Base path where the packages folders are created.")
     parser.add_argument(
         "-f", "--force", action="store_true",
         help="Overwrite a previously existing PKGBUILD.")
@@ -810,7 +823,12 @@ def main():
         "-m", "--makepkg", metavar="M",
         default="--cleanbuild --nodeps",
         help="Additional arguments to pass to makepkg.")
-    args = parser.parse_args()
+    env_args = eval(  # Parse the environment variable arguments.
+        _run_shell(
+            "{} -c 'import sys; print(sys.argv[1:])' {}".format(
+                sys.executable, os.environ.get("PYPI2PKGBUILD_ARGS", "")),
+            stdout=PIPE).stdout)
+    args = parser.parse_args(env_args + sys.argv[1:])
 
     if args.outdated or args.outdated_update:
         if args.name:

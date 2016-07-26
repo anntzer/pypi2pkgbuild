@@ -75,3 +75,12 @@ Installation
 
 You can even run PyPI2PKGBUILD on itself to create a proper Arch package
 (`pypi2pkgbuild.py git+https://github.com/anntzer/pypi2pkgbuild`)...
+
+Configuration
+-------------
+
+Defaults arguments can be passed via the `PYPI2PHGBUILD_ARGS` environment
+variable, e.g.
+```
+    $ export PYPI2PKGBUILD_ARGS='-b /path/to/pkgbuilds -f'
+```
