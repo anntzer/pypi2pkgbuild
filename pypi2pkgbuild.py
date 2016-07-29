@@ -270,12 +270,17 @@ def _get_metadata(name, makedepends_cython):
         . {venvdir}/bin/activate
         export PIP_CONFIG_FILE=/dev/null
         pip install --upgrade pip >/dev/null
-        pip install cython >/dev/null
+        {install_cython}
         install_cmd() {{
             pip install --no-deps {name}
         }}
         show_cmd() {{
-            name="$(pip freeze | cut -d= -f1 | grep -v '^Cython\|numpy$')"
+            # known packages that must be excluded.
+            if [[ {name} =~ ^setuptools|pip|Cython|numpy$ ]]; then
+                name={name}
+            else
+                name="$(pip freeze | cut -d= -f1 | grep -v '^Cython\|numpy$')"
+            fi
             python -c \
                 "import json, pip; info = next(pip.commands.show.search_packages_info(['$name'])); info.pop('entry_points', None); print(json.dumps(info))"
         }}
@@ -288,7 +293,12 @@ def _get_metadata(name, makedepends_cython):
             show_cmd
         fi
         """.format(
-            name=name, venvdir=venvdir, more_requires=more_requires, log=log,
+            name={"setuptools": "setuptools", "pip": "pip",
+                  "cython": "Cython", "numpy": "numpy"}.get(
+                      name.lower(), name.lower()),
+            venvdir=venvdir,
+            more_requires=more_requires,
+            log=log,
             install_cython=("pip install cython >/dev/null"
                             if makedepends_cython
                             else "")))
@@ -296,7 +306,8 @@ def _get_metadata(name, makedepends_cython):
             process = _run_shell(["sh"], input=script, stdout=PIPE)
         except CalledProcessError:
             print(log.read(), file=sys.stderr)
-            raise
+            raise PackagingError(
+                "Failed to obtain metadata for {!r}.".format(name))
         more_requires = more_requires.read().splitlines()
     metadata = json.loads(process.stdout)
     metadata["requires"].extend(more_requires)
@@ -608,7 +619,7 @@ class Package(_BasePackage):
                         break
                 else:
                     self._files.update(
-                        LICENSE=("LICENSE: " + ", ".join(licenses))
+                        LICENSE=("LICENSE: " + ", ".join(licenses) + "\n")
                                 .encode("ascii"))
                     LOGGER.warning("Could not retrieve license file")
 
@@ -806,7 +817,7 @@ def main():
         "-O", "--outdated-update", action="store_true", default=False,
         help="Find and build outdated packages.")
     parser.add_argument(
-        "-b", "--base-path",
+        "-b", "--base-path", type=Path,
         help="Base path where the packages folders are created.")
     parser.add_argument(
         "-f", "--force", action="store_true",

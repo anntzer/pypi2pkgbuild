@@ -1,25 +1,28 @@
 Issues
 ======
 
-- PyPI packages that depends on another package's `extra_requires`.
-  Needs upstream support from `pip show`.
+- PyPI packages that depends on another package's `extra_requires` are not
+  supported (needs upstream support from `pip show`).
     - `scikit-image` depends on `dask[array]`.
 
-- Install `Cython` itself (`numpy` is probably too complicated).
+- Special flags may be required (?) for optimized builds of `numpy` and `scipy`.
+
+- License support is incomplete.
+    - e.g. `matplotlib` has a `LICENSE` *folder*.
+
+- `git` packages are cloned twice; we may be able to cache them.
+
+Arch packaging
+==============
 
 - Arch packages that "vendor" some dependencies are supported, although the
   `depends` array may be a bit mangled.
 
-- Incomplete support for licences.
-    - e.g. `matplotlib` has a `LICENSE` *folder*.
-
-- Avoid double cloning of `git` packages (by manual caching).
+- Some packages are not installed as wheels (e.g. PyQt5) and thus not seen by
+  `pip list --outdated` (and thus `pypi2pkgbuild.py -o`).
 
 Remaining manual packages
 =========================
-
-- Licensing issues:
-    - `versioneer`: no classifier (public domain)
 
 - Undeclared dependencies:
     - `hmmlearn`
