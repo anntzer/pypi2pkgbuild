@@ -865,10 +865,12 @@ def main():
             print(e, file=sys.stderr)
             return 1
 
-    cmd = "sudo pacman -U {}".format(" ".join(map(str, Package.build_cache)))
-    print()
-    print(cmd)
-    _run_shell(cmd, check=False)
+    if Package.build_cache:
+        cmd = "sudo pacman -U {}".format(
+            " ".join(map(str, Package.build_cache)))
+        print()
+        print(cmd)
+        _run_shell(cmd, check=False)
 
 
 if __name__ == "__main__":
