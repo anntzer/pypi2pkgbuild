@@ -630,7 +630,8 @@ class Package(_BasePackage):
     pkgname = property(
         lambda self: self._ref.pkgname)
     epoch = property(
-        lambda self: "")
+        lambda self:
+        self._ref.arch_version.epoch if self._ref.arch_version else "")
     pkgver = property(
         lambda self: shlex.quote(self._ref.info["info"]["version"]))
     pkgrel = property(
