@@ -5,12 +5,6 @@ Issues
   supported (needs upstream support from `pip show`).
     - `scikit-image` depends on `dask[array]`.
 
-- PyPI does not prevent uploading of wheels using local version
-  identifiers, despite PEP440's explicit disallowance (see
-  https://github.com/pypa/pypi-legacy/issues/486).  This breaks a
-  check (assertion) on the wheel name, which can be skipped by setting
-  `PYTHONOPTIMIZE=1`.
-
 - Special flags may be required (?) for optimized builds of `numpy` and `scipy`.
 
 - License support is incomplete.

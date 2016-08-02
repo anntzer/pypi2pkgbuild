@@ -346,9 +346,8 @@ class PackageRef:
         self.info = _get_pypi_info(name)
         self.pypi_name = self.info["info"]["name"] # Name on PyPI.
         self.wheel_name = self.pypi_name.replace("-", "_") # Name for wheels.
-        # Name for Arch Linux.
-        # FIXME(?) Case ignored due to messed up packages such as "cycler" (on
-        # PyPI as "Cycler").
+        # Name for Arch Linux.  Different cases may be used for pip and PyPI
+        # (e.g. "cycler" is "Cycler" on PyPI) so just ignore it.
         cmd = (r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
                "| cut -f1 | uniq".format(
                    self.wheel_name, sys.version_info))
@@ -498,22 +497,25 @@ class Package(_BasePackage):
         for url in unfiltered_urls:
             if url["packagetype"] == "bdist_wheel":
                 wheel_info = parse_wheel(url["path"])
-                # FIXME[Upstream] pypa/pypi-legacy#486
-                assert ((wheel_info.name,
-                         wheel_info.version)
-                        == (self._ref.wheel_name,
-                            self._ref.info["info"]["version"])), \
-                    "Unexpected wheel info: {}".format(wheel_info)
                 if wheel_info.py not in PY_TAGS:
                     continue
-                if wheel_info.platform == "any":
-                    with suppress(ValueError):
-                        urls.append((url, prefer.index("anywheel")))
-                elif wheel_info.platform.startswith("manylinux"):
-                    with suppress(ValueError):
-                        urls.append((url, prefer.index("manylinuxwheel")))
-                else:  # Skip other platforms.
+                try:
+                    order = prefer.index(
+                        {"any": "anywheel",
+                         "manylinux1_i686": "manylinuxwheel",
+                         "manylinux1_x86_64": "manylinuxwheel"}[
+                             wheel_info.platform])
+                except (KeyError, ValueError):
                     continue
+                else:
+                    # PyPI currently allows uploading of packages with local
+                    # version identifiers, see pypa/pypi-legacy#486.
+                    if (wheel_info.name != self._ref.wheel_name
+                            or wheel_info.version
+                               != self._ref.info["info"]["version"]):
+                        LOGGER.warning("Unexpected wheel info: %s", wheel_info)
+                    else:
+                        urls.append((url, order))
             elif url["packagetype"] == "sdist":
                 with suppress(ValueError):
                     urls.append((url, prefer.index("sdist")))
