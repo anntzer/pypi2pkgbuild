@@ -30,6 +30,7 @@ PY_TAGS = ["py2.py3",
            "cp{0.major}{0.minor}".format(sys.version_info)]
 PLATFORM_TAGS = {
     "any": "any", "manylinux1_i686": "i686", "manylinux1_x86_64": "x86_64"}
+THIS_ARCH = ["i686", "x86_64"][sys.maxsize > 2 ** 32]
 SDIST_SUFFIXES = [".tar.gz", ".tgz", ".tar.bz2", ".zip"]
 LICENSE_NAMES = [
     "LICENSE", "LICENSE.txt", "LICENCE", "LICENCE.txt", "license.txt",
@@ -414,24 +415,43 @@ class _BasePackage(ABC):
                *(["--force"] if force else []),
                *shlex.split(makepkg)]
         subprocess.run(cmd, check=True, cwd=str(cwd))
-        # Only one of the archs will be globbed successfully.
-        fullname, = sum(
-            (list(cwd.glob(fname + ".*"))
-             for fname in (
-                 _run_shell("makepkg --packagelist", cwd=cwd, stdout=PIPE).
-                 stdout.splitlines())),
-            [])
-        extra_deps = _run_shell(
-            "namcap {} | "
-            "grep -Po '(?<=E: Dependency ).*(?= detected and not included)'"
-            "|| true".format(fullname.name),
-            cwd=cwd, stdout=PIPE).stdout.splitlines()
-        # The contents of PKGBUILD may have been updated by `pkgver()`.
-        (cwd / "PKGBUILD").write_text(
-            (cwd / "PKGBUILD").read_text().replace(
-                "## EXTRA_DEPENDS ##",
-                "depends+=({})".format(" ".join(extra_deps))))
+
+        def _get_fullname():
+            # Only one of the archs will be globbed successfully.
+            fullname, = sum(
+                (list(cwd.glob(fname + ".*"))
+                for fname in (
+                    _run_shell("makepkg --packagelist", cwd=cwd, stdout=PIPE).
+                    stdout.splitlines())),
+                [])
+            return fullname
+
+        # Update PKGBUILD.
+        namcap = (
+            subprocess.run(
+                ["namcap", _get_fullname().name],
+                cwd=str(cwd), stdout=PIPE, universal_newlines=True)
+            .stdout.splitlines())
+        # `pkgver()` may update the PKGBUILD, so reread it.
+        pkgbuild_contents = (cwd / "PKGBUILD").read_text()
+        # Binary dependencies.
+        extra_deps_re = "(?<=E: Dependency ).*(?= detected and not included)"
+        extra_deps = [
+            match.group(0)
+            for match in filter(None, (re.search(extra_deps_re, line)
+                                for line in namcap))]
+        pkgbuild_contents = pkgbuild_contents.replace(
+            "## EXTRA_DEPENDS ##",
+            "depends+=({})".format(" ".join(extra_deps)))
+        # Unexpected archs.
+        any_arch_re = "E: ELF file .* found in an 'any' package."
+        if any(re.search(any_arch_re, line) for line in namcap):
+            pkgbuild_contents = pkgbuild_contents.replace(
+                "arch=(any)", "arch=({})".format(THIS_ARCH))
+        # Repackage.
+        (cwd / "PKGBUILD").write_text(pkgbuild_contents)
         _run_shell("makepkg --force --repackage --nodeps", cwd=cwd)
+        fullname = _get_fullname()  # The arch may have changed.
         # Python dependencies always get misanalyzed so we just filter them
         # away.  Extension modules unconditionally link to `libpthread` (see
         # output of `python-config --libs`) so filter that away too.  It would
