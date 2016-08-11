@@ -110,6 +110,7 @@ license=({pkg.license})
 depends=(python {pkg.depends})
 makedepends=({pkg.makedepends})
 checkdepends=({pkg.checkdepends})
+provides=()
 conflicts=()
 """
 
@@ -137,6 +138,7 @@ md5sums+=({md5s})
 
 PKGBUILD_CONTENTS = """\
 ## EXTRA_DEPENDS ##
+provides+=($(if [[ ${source[0]} =~ ^git+ ]]; then echo "$pkgname" | sed 's/-git$//'; fi))
 conflicts+=($(if [[ ${source[0]} =~ ^git+ ]]; then echo "$pkgname" | sed 's/-git$//'; fi))
 
 export PIP_CONFIG_FILE=/dev/null
@@ -317,10 +319,15 @@ def _get_metadata(name, makedepends_cython):
 @lru_cache()
 def _get_pypi_info(name):
     if name.startswith("git+"):
+        metadata = _get_metadata(name, True)
+        try:  # Normalize the name if available on PyPI.
+            metadata["name"] = _get_pypi_info(metadata["name"])["info"]["name"]
+        except PackagingError:
+            pass
         return {"info": {"download_url": name[4:],  # Strip "git+".
                          "home_page": name[4:],
                          "package_url": name[4:],
-                         **_get_metadata(name, True)},
+                         **metadata},
                 "urls": [{"packagetype": "sdist",
                           "path": urllib.parse.urlparse(name).path,
                           "url": name,
