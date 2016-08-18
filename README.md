@@ -52,7 +52,7 @@ upstream package (except the newly created package), so updating should work
 fine when the upstream package is actually updated.
 
 However, dependencies are still expressed using the master package, so
-internal dependencies may appear as circular or repeated.
+internal dependencies will appear be circular.
 
 All the packages are placed in a subfolder named `meta:$pkgname`, so one can
 easily install everything by `cd`'ing there and running

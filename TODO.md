@@ -12,11 +12,12 @@ Issues
 
 - `git` packages are cloned twice; we may be able to cache them.
 
+- Name collision in meta packages named as their main package (e.g. Pillow and
+  SANE).  Probably requires actually putting all components in a single package
+  (for naming reasons).
+
 Arch packaging
 ==============
-
-- Arch packages that "vendor" some dependencies are supported, although the
-  `depends` array may be a bit mangled.
 
 - Some packages are not installed as wheels (e.g. PyQt5) and thus not seen by
   `pip list --outdated` (and thus `pypi2pkgbuild.py -o`).

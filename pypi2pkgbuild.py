@@ -230,7 +230,15 @@ GITIGNORE = """\
 """
 
 
+def _unique(seq):
+    """Return unique elements in a sequence, keeping them in order.
+    """
+    return list(OrderedDict(zip(list(seq)[::-1], repeat(None))))[::-1]
+
+
 def _run_shell(*args, **kwargs):
+    """`subprocess.run` with useful defaults.
+    """
     kwargs = {"shell": True, "check": True, "universal_newlines": True,
               **kwargs}
     if "cwd" in kwargs:
@@ -350,6 +358,7 @@ def _get_pypi_info(name):
 
 class PackageRef:
     def __init__(self, name, *, force_new=False):
+        # If `force_new` is set, do not attempt to use the Arch Linux name.
         self.orig_name = name  # A name or an URL.
         self.info = _get_pypi_info(name)
         self.pypi_name = self.info["info"]["name"] # Name on PyPI.
@@ -387,7 +396,7 @@ class PackageRef:
 class PackageRefList(list):
     def __format__(self, fmt):
         if fmt == "":
-            return " ".join(ref.pkgname for ref in self)
+            return " ".join(_unique(ref.pkgname for ref in self))
         return super().__format__(fmt)  # Raise TypeError.
 
 
@@ -589,9 +598,7 @@ class Package(_BasePackage):
                 self._arch = ["i686", "x86_64"]
 
     def _find_depends(self, metadata):
-        depends = list(  # Drop prefix duplicates.
-            OrderedDict(zip(metadata["requires"][::-1], repeat(None))))[::-1]
-        return PackageRefList(PackageRef(depend) for depend in depends)
+        return PackageRefList(map(PackageRef, metadata["requires"]))
 
     def _find_license(self):
         info = self._ref.info["info"]
