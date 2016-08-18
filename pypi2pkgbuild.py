@@ -886,7 +886,7 @@ def main():
 
     else:
         if not args.name:
-            parser.error("error: the following arguments are required: name")
+            parser.error("the following arguments are required: name")
         try:
             kwargs = vars(args)
             del kwargs["outdated"], kwargs["outdated_update"]
