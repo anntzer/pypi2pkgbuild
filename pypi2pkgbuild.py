@@ -365,9 +365,8 @@ class PackageRef:
         self.wheel_name = self.pypi_name.replace("-", "_") # Name for wheels.
         # Name for Arch Linux.  Different cases may be used for pip and PyPI
         # (e.g. "cycler" is "Cycler" on PyPI) so just ignore it.
-        cmd = (r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
-               "| cut -f1 | uniq".format(
-                   self.wheel_name, sys.version_info))
+        # FIXME Also call pacman -Qo to check if the package has been installed
+        # from the AUR (see e.g. pipdeptree)?  (At least print a warning?)
         process = _run_shell(
             r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
             "| cut -f1 | uniq".format(
@@ -815,7 +814,8 @@ def find_outdated():
                 continue
             owners.setdefault("{} {}".format(pkgname, pkgver_full),
                               []).append(line)
-    for owner, lines in sorted(owners.items()):
+    owners = OrderedDict(sorted(owners.items()))
+    for owner, lines in owners.items():
         print(owner)
         for line in lines:
             print("\t" + line)
@@ -851,8 +851,9 @@ def main():
         "-o", "--outdated", action="store_true", default=False,
         help="Find outdated packages.")
     parser.add_argument(
-        "-O", "--outdated-update", action="store_true", default=False,
-        help="Find and build outdated packages.")
+        "-u", "--update-outdated", metavar="SKIP", nargs="*",
+        help="Find and build outdated packages; pass a list of (exact) PyPI"
+             "names to *skip*.")
     parser.add_argument(
         "-b", "--base-path", type=Path,
         help="Base path where the packages folders are created.")
@@ -878,15 +879,17 @@ def main():
             stdout=PIPE).stdout)
     args = parser.parse_args(env_args + sys.argv[1:])
 
-    if args.outdated or args.outdated_update:
+    if args.outdated or args.update_outdated is not None:
         if args.name:
             parser.error("--outdated{,-update} should be given with no name.")
         owners = find_outdated()
-        if args.outdated_update:
+        if args.update_outdated is not None:
             for line in sum(owners.values(), []):
                 name, *_ = line.split()
+                if name in args.update_outdated:
+                    continue
                 kwargs = {**vars(args), "name": name}
-                del kwargs["outdated"], kwargs["outdated_update"]
+                del kwargs["outdated"], kwargs["update_outdated"]
                 create_package(**kwargs)
         else:
             return
@@ -896,7 +899,7 @@ def main():
             parser.error("the following arguments are required: name")
         try:
             kwargs = vars(args)
-            del kwargs["outdated"], kwargs["outdated_update"]
+            del kwargs["outdated"], kwargs["update_outdated"]
             create_package(**kwargs)
         except PackagingError as e:
             print(e, file=sys.stderr)
