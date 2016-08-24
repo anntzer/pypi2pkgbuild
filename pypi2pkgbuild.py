@@ -771,6 +771,7 @@ def get_config():
     return {"maintainer": maintainer}
 
 
+@lru_cache()
 def create_package(
         name,
         force=False,
@@ -863,7 +864,7 @@ def main():
     parser.add_argument(
         "-p", "--prefer", metavar="P",
         default="anywheel:sdist:manylinuxwheel",
-        type=lambda s: s.split(":"),
+        type=lambda s: tuple(s.split(":")),  # Keep it hashable.
         help="Preference order for dists.")
     parser.add_argument(
         "-s", "--skipdeps", action="store_true",
