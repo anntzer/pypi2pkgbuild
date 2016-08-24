@@ -178,7 +178,8 @@ if [[ $(_first_source) =~ ^git+ ]]; then
     pkgver() {
         ( set -o pipefail
           cd "$srcdir/$(_dist_name)"
-          git describe --long --tags 2>/dev/null | sed 's/\\([^-]*-g\\)/r\\1/;s/-/./g' ||
+          git describe --long --tags 2>/dev/null |
+            sed 's/^v//;s/\\([^-]*-g\\)/r\\1/;s/-/./g' ||
           printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
         )
     }
@@ -236,14 +237,26 @@ def _unique(seq):
     return list(OrderedDict(zip(list(seq)[::-1], repeat(None))))[::-1]
 
 
+def _subprocess_run(argv, *args, **kwargs):
+    """Logging wrapper for `subprocess.run`.
+    """
+    argv_s = (" ".join(map(shlex.quote, argv)) if isinstance(argv, list)
+              else argv)
+    if "cwd" in kwargs:
+        LOGGER.debug("Running subprocess from %s:\n%s", kwargs["cwd"], argv_s)
+    else:
+        LOGGER.debug("Running subprocess:\n%s", argv_s)
+    return subprocess.run(argv, *args, **kwargs)
+
+
 def _run_shell(*args, **kwargs):
-    """`subprocess.run` with useful defaults.
+    """`_subprocess_run` with useful defaults.
     """
     kwargs = {"shell": True, "check": True, "universal_newlines": True,
               **kwargs}
     if "cwd" in kwargs:
         kwargs["cwd"] = str(Path(kwargs["cwd"]))
-    return subprocess.run(*args, **kwargs)
+    return _subprocess_run(*args, **kwargs)
 
 
 class ArchVersion(namedtuple("_ArchVersion", "epoch pkgver pkgrel")):
@@ -314,7 +327,7 @@ def _get_metadata(name, makedepends_cython):
                             if makedepends_cython
                             else "")))
         try:
-            process = _run_shell(["sh"], input=script, stdout=PIPE)
+            process = _run_shell(script, stdout=PIPE)
         except CalledProcessError:
             print(log.read(), file=sys.stderr)
             raise PackagingError(
@@ -422,7 +435,7 @@ class _BasePackage(ABC):
         cmd = ["makepkg",
                *(["--force"] if force else []),
                *shlex.split(makepkg)]
-        subprocess.run(cmd, check=True, cwd=str(cwd))
+        _subprocess_run(cmd, check=True, cwd=str(cwd))
 
         def _get_fullname():
             # Only one of the archs will be globbed successfully.
@@ -436,7 +449,7 @@ class _BasePackage(ABC):
 
         # Update PKGBUILD.
         namcap = (
-            subprocess.run(
+            _subprocess_run(
                 ["namcap", _get_fullname().name],
                 cwd=str(cwd), stdout=PIPE, universal_newlines=True)
             .stdout.splitlines())
@@ -563,7 +576,7 @@ class Package(_BasePackage):
         if self._srctree is None:
             self._srctree = TemporaryDirectory()
             if urllib.parse.urlparse(url["url"]).scheme.startswith("git+"):
-                subprocess.run(
+                _subprocess_run(
                     ["git", "clone", url["url"][4:], self._srctree.name])
                 self._srctree.path = Path(self._srctree.name)
             else:
@@ -840,7 +853,6 @@ def main():
         # on stderr.
         sys.exit(1)
 
-    logging.basicConfig(level="INFO")
     parser = ArgumentParser(
         description=_description,
         formatter_class=type("", (RawDescriptionHelpFormatter,
@@ -848,6 +860,9 @@ def main():
     parser.add_argument(
         "name", nargs="?",
         help="The PyPI package name.")
+    parser.add_argument(
+        "-d", "--debug", action="store_true", default=False,
+        help="Log at DEBUG level.")
     parser.add_argument(
         "-o", "--outdated", action="store_true", default=False,
         help="Find outdated packages.")
@@ -879,19 +894,20 @@ def main():
                 sys.executable, os.environ.get("PYPI2PKGBUILD_ARGS", "")),
             stdout=PIPE).stdout)
     args = parser.parse_args(env_args + sys.argv[1:])
+    logging.basicConfig(level="DEBUG" if vars(args).pop("debug") else "INFO")
 
-    if args.outdated or args.update_outdated is not None:
+    outdated, update_outdated = (
+        vars(args).pop(k) for k in ["outdated", "update_outdated"])
+    if outdated or update_outdated is not None:
         if args.name:
             parser.error("--outdated{,-update} should be given with no name.")
         owners = find_outdated()
-        if args.update_outdated is not None:
+        if update_outdated is not None:
             for line in sum(owners.values(), []):
                 name, *_ = line.split()
-                if name in args.update_outdated:
+                if name in update_outdated:
                     continue
-                kwargs = {**vars(args), "name": name}
-                del kwargs["outdated"], kwargs["update_outdated"]
-                create_package(**kwargs)
+                create_package(**{**vars(args), "name": name})
         else:
             return
 
@@ -899,9 +915,7 @@ def main():
         if not args.name:
             parser.error("the following arguments are required: name")
         try:
-            kwargs = vars(args)
-            del kwargs["outdated"], kwargs["update_outdated"]
-            create_package(**kwargs)
+            create_package(**vars(args))
         except PackagingError as e:
             print(e, file=sys.stderr)
             return 1
