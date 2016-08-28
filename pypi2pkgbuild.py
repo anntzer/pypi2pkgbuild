@@ -921,7 +921,8 @@ def main():
             return 1
 
     if Package.build_cache:
-        cmd = "sudo pacman -U {}".format(
+        cmd = "sudo pacman -U {} {}".format(
+            "-dd" if args.skipdeps else "",
             " ".join(map(str, Package.build_cache)))
         print()
         print(cmd)
