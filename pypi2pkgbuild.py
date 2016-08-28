@@ -814,9 +814,11 @@ def find_outdated():
     owners = {}
     for line, name, loc in zip(lines, names, locs):
         if loc == syswide_location:
-            *_, pkgname, pkgver_full = _run_shell(
-                "pacman -Qo {}/{}-*".format(
-                    syswide_location, name.replace("-", "_")),
+            pkgname, pkgver_full = _run_shell(
+                # {dist,egg}-info; don't be confused e.g. by pytest-cov.pth.
+                # This implementation raises if there's any ambibuity.
+                "pacman -Qo {}/{}-*-info | rev | cut -d' ' -f1,2 | rev"
+                .format(syswide_location, name.replace("-", "_")),
                 stdout=PIPE).stdout[:-1].split()
             # Check that pypi's version is indeed newer.  Some packages
             # mis-report their version to pip (e.g., slicerator 0.9.7's Github
