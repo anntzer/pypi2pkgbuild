@@ -239,13 +239,18 @@ def _unique(seq):
 
 def _subprocess_run(argv, *args, **kwargs):
     """Logging wrapper for `subprocess.run`.
+
+    Log at `DEBUG` level except if the `verbose` kwarg is set, in which case
+    log at `INFO` level.
     """
+    level = logging.INFO if kwargs.pop("verbose", None) else logging.DEBUG
     argv_s = (" ".join(map(shlex.quote, argv)) if isinstance(argv, list)
               else argv)
     if "cwd" in kwargs:
-        LOGGER.debug("Running subprocess from %s:\n%s", kwargs["cwd"], argv_s)
+        LOGGER.log(level,
+                   "Running subprocess from %s:\n%s", kwargs["cwd"], argv_s)
     else:
-        LOGGER.debug("Running subprocess:\n%s", argv_s)
+        LOGGER.log(level, "Running subprocess:\n%s", argv_s)
     return subprocess.run(argv, *args, **kwargs)
 
 
@@ -367,6 +372,11 @@ def _get_pypi_info(name):
                             object_pairs_hook=OrderedDict)
         request["_pkgname_suffix"] = ""
         return request
+
+
+class NonPyPackageRef:
+    def __init__(self, pkgname):
+        self.pkgname = pkgname
 
 
 class PackageRef:
@@ -508,9 +518,15 @@ class Package(_BasePackage):
                 "No URL available for package {!r}.".format(self.pkgname))
 
         self._find_arch_makedepends()
+        for nonpy_dep in [ref for ref in self._makedepends
+                          if isinstance(ref, NonPyPackageRef)]:
+            _run_shell("if ! pacman -Q {0} >/dev/null 2>&1; then "
+                       "sudo pacman -S --asdeps {0}; fi"
+                       .format(nonpy_dep.pkgname), verbose=True)
         metadata = _get_metadata(
             ref.orig_name,
-            any(ref.pypi_name == "Cython" for ref in self._makedepends))
+            any(ref.pypi_name == "Cython" for ref in self._makedepends
+                if isinstance(ref, PackageRef)))
         self._depends = self._find_depends(metadata)
         self._licenses = self._find_license()
 
@@ -592,17 +608,18 @@ class Package(_BasePackage):
     def _find_arch_makedepends(self):
         self._arch = ["any"]
         self._makedepends = PackageRefList([PackageRef("pip")])
-        makedepends_cython = False
         archs = sorted(
             {PLATFORM_TAGS[parse_wheel(url["path"]).platform]
              for url in self._urls if url["packagetype"] == "bdist_wheel"})
         if self._urls[0]["packagetype"] == "bdist_wheel":
             self._arch = archs
         else:
+            if list(self._get_srctree().glob("**/*.i")):
+                self._arch = ["i686", "x86_64"]
+                self._makedepends.append(NonPyPackageRef("swig"))
             if list(self._get_srctree().glob("**/*.pyx")):
                 self._arch = ["i686", "x86_64"]
                 self._makedepends.append(PackageRef("Cython"))
-                makedepends_cython = True
             if not "any" in archs and list(self._get_srctree().glob("**/*.c")):
                 # Don't bother checking for the presence of C sources if
                 # there's an "any" wheel available; e.g. pexpect has a C source
@@ -926,9 +943,7 @@ def main():
         cmd = "sudo pacman -U {} {}".format(
             "-dd" if args.skipdeps else "",
             " ".join(map(str, Package.build_cache)))
-        print()
-        print(cmd)
-        _run_shell(cmd, check=False)
+        _run_shell(cmd, check=False, verbose=True)
 
 
 if __name__ == "__main__":
