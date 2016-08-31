@@ -186,9 +186,9 @@ if [[ $(_first_source) =~ ^git+ ]]; then
 fi
 
 build() {
-    _is_wheel && return
+    if _is_wheel; then return; fi
     cd "$srcdir/$(_dist_name)"
-    pip wheel -v --no-deps --wheel-dir "$srcdir" .
+    if ! pip wheel -v --no-deps --wheel-dir "$srcdir" .; then return; fi
     license_filename=$(_license_filename)
     if [[ $license_filename ]]; then
         cp "$license_filename" "$srcdir/LICENSE"
@@ -199,7 +199,7 @@ check() {
     # Remove the first line line to run tests.
     # You may need to call `python setup.py build_ext -i` first.
     return 0
-    _is_wheel && return
+    if _is_wheel; then return; fi
     cd "$srcdir/$(_dist_name)"
     python setup.py -q test
 }
@@ -207,7 +207,8 @@ check() {
 package() {
     cd "$srcdir"
     # pypa/pip#3063: pip always checks for a globally installed version.
-    pip --quiet install --root="$pkgdir" --no-deps --ignore-installed *.whl
+    pip --quiet install --root="$pkgdir" --no-deps --ignore-installed \
+        "$(if ls *.whl >/dev/null 2>&1; then echo *.whl; else echo ./$(_dist_name); fi)"
     if [[ -f LICENSE ]]; then
         install -D -m644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     fi
