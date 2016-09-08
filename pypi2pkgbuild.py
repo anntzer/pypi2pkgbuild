@@ -217,7 +217,7 @@ package() {
 . "$(dirname "$BASH_SOURCE")/PKGBUILD_EXTRAS"
 """
 
-MULTIPKGBUILD_CONTENTS = """\
+METAPKGBUILD_CONTENTS = """\
 package() {
     true
 }
@@ -410,7 +410,7 @@ class PackageRef:
             self.arch_version = ArchVersion(epoch or "", pkgver, pkgrel)
             packaged = _run_shell(
                 "pkgfile -l {} "
-                "| grep -Po '(?<=site-packages/)[^-]*(?=.*\.egg-info/?$)'".
+                r"| grep -Po '(?<=site-packages/)[^-]*(?=.*\.egg-info/?$)'".
                 format(pkgname), stdout=PIPE).stdout.splitlines()
             self.arch_packaged = packaged
             self.exists = True
@@ -507,6 +507,7 @@ class Package(_BasePackage):
         super().__init__()
 
         self._ref = ref
+        self._pkgrel = options.pkgrel
 
         stream = StringIO()
         self._srctree = None
@@ -700,7 +701,7 @@ class Package(_BasePackage):
     pkgver = property(
         lambda self: shlex.quote(self._ref.info["info"]["version"]))
     pkgrel = property(
-        lambda self: "00")
+        lambda self: self._pkgrel)
     pkgdesc = property(
         lambda self: shlex.quote(self._ref.info["info"]["summary"]))
     arch = property(
@@ -727,7 +728,7 @@ class Package(_BasePackage):
                 create_package(ref.pypi_name, options)
 
 
-class MultiPackage(_BasePackage):
+class MetaPackage(_BasePackage):
     def __init__(self, ref, config, options):
         super().__init__()
         self._ref = ref
@@ -744,7 +745,7 @@ class MultiPackage(_BasePackage):
                 1)
         self._pkgbuild = (
             PKGBUILD_HEADER.format(pkg=self, config=config) +
-            MULTIPKGBUILD_CONTENTS)
+            METAPKGBUILD_CONTENTS)
 
     pkgname = property(
         lambda self: self._ref.pkgname)
@@ -787,7 +788,7 @@ class MultiPackage(_BasePackage):
 
 def dispatch_package_builder(name, config, options):
     ref = PackageRef(name)
-    cls = Package if len(ref.arch_packaged) <= 1 else MultiPackage
+    cls = Package if len(ref.arch_packaged) <= 1 else MetaPackage
     return cls(ref, config, options)
 
 
@@ -847,7 +848,8 @@ def find_outdated():
     return owners
 
 
-Options = namedtuple("Options", "base_path force prefer skipdeps makepkg")
+Options = namedtuple(
+    "Options", "base_path force pkgrel prefer skipdeps makepkg")
 _description = """\
 Create a PKGBUILD for a PyPI package and run makepkg.
 
@@ -886,6 +888,10 @@ def main():
     parser.add_argument(
         "-f", "--force", action="store_true",
         help="Overwrite a previously existing PKGBUILD.")
+    parser.add_argument(
+        "-r", "--pkgrel", default="00",
+        help="Force value of $pkgrel (not applicable to metapackages).  "
+             "Set e.g. to 99 to override AUR packages.")
     parser.add_argument(
         "-p", "--prefer", metavar="P",
         default="anywheel:sdist:manylinuxwheel",
@@ -926,8 +932,8 @@ def main():
             parser.error("the following arguments are required: name")
         try:
             create_package(vars(args).pop("name"), Options(**vars(args)))
-        except PackagingError as e:
-            print(e, file=sys.stderr)
+        except PackagingError as exc:
+            print(exc, file=sys.stderr)
             return 1
 
     if Package.build_cache:

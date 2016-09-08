@@ -21,7 +21,8 @@ In order to provide additional information to `makepkg`, edit
 
 By default, `pkgrel` is set to `00`.  The intent is to prefer native packages
 (or AUR ones, if using an AUR helper), relying on this tool only for
-missing/out-of-date packages.
+missing/out-of-date packages.  Use the `--pkgrel` flag to set it to another
+value, e.g. `99` to override native and AUR packages.
 
 Improvements over pip2arch
 --------------------------
