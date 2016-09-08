@@ -12,6 +12,8 @@ Issues
 
 - `git` packages are cloned twice; we may be able to cache them.
 
+- Meta packages are fully rebuilt even if only a component needs to be built.
+
 - Name collision in meta packages named as their main package (e.g. Pillow and
   SANE).  Probably requires actually putting all components in a single package
   (for naming reasons).

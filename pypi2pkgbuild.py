@@ -431,12 +431,12 @@ class _BasePackage(ABC):
         # self._pkgbuild = ...
 
     @abc.abstractmethod
-    def write_deps_to(self, base_path, *, force, prefer, makepkg):
+    def write_deps_to(self, options):
         pass
 
-    def write_to(self, base_path, *, force, makepkg):
-        cwd = base_path / self.pkgname
-        cwd.mkdir(parents=True, exist_ok=force)
+    def write_to(self, options):
+        cwd = options.base_path / self.pkgname
+        cwd.mkdir(parents=True, exist_ok=options.force)
         _run_shell("git init .", cwd=cwd)
         (cwd / ".gitignore").write_text(GITIGNORE)
         (cwd / "PKGBUILD_EXTRAS").open("a").close()
@@ -444,8 +444,8 @@ class _BasePackage(ABC):
         for fname, content in self._files.items():
             (cwd / fname).write_bytes(content)
         cmd = ["makepkg",
-               *(["--force"] if force else []),
-               *shlex.split(makepkg)]
+               *(["--force"] if options.force else []),
+               *shlex.split(options.makepkg)]
         _subprocess_run(cmd, check=True, cwd=str(cwd))
 
         def _get_fullname():
@@ -503,7 +503,7 @@ class _BasePackage(ABC):
 
 
 class Package(_BasePackage):
-    def __init__(self, ref, config, prefer):
+    def __init__(self, ref, config, options):
         super().__init__()
 
         self._ref = ref
@@ -513,7 +513,8 @@ class Package(_BasePackage):
 
         LOGGER.info("Packaging %s %s",
                     self.pkgname, ref.info["info"]["version"])
-        self._urls = self._filter_and_sort_urls(ref.info["urls"], prefer)
+        self._urls = self._filter_and_sort_urls(ref.info["urls"],
+                                                options.prefer)
         if not self._urls:
             raise PackagingError(
                 "No URL available for package {!r}.".format(self.pkgname))
@@ -719,20 +720,19 @@ class Package(_BasePackage):
     checkdepends = property(
         lambda self: PackageRefList())
 
-    def write_deps_to(self, base_path, *, force, prefer, makepkg):
+    def write_deps_to(self, options):
         for ref in self._depends:
             if not ref.exists:
                 # Dependency not found, build it too.
-                create_package(ref.pypi_name, force=force, prefer=prefer,
-                               makepkg=makepkg, base_path=base_path)
+                create_package(ref.pypi_name, options)
 
 
 class MultiPackage(_BasePackage):
-    def __init__(self, ref, config, prefer):
+    def __init__(self, ref, config, options):
         super().__init__()
         self._ref = ref
         self._arch_depends = PackageRefList(
-            Package(PackageRef(name, force_new=True), config, prefer)
+            Package(PackageRef(name, force_new=True), config, options)
             for name in ref.arch_packaged)
         self._arch_version = self._ref.arch_version._replace(
             pkgrel=self._ref.arch_version.pkgrel + ".99")
@@ -772,22 +772,23 @@ class MultiPackage(_BasePackage):
     def _get_target_path(self, base_path):
         return base_path / ("meta:" + self._ref.pkgname)
 
-    def write_deps_to(self, base_path, *, force, prefer, makepkg):
-        target_path = self._get_target_path(base_path)
+    def write_deps_to(self, options):
+        dep_options = options._replace(
+            base_path=self._get_target_path(options.base_path))
         for pkg in self._arch_depends:
-            pkg.write_deps_to(
-                target_path, force=force, prefer=prefer, makepkg=makepkg)
-            pkg.write_to(target_path, force=force, makepkg=makepkg)
+            pkg.write_deps_to(dep_options)
+            pkg.write_to(dep_options)
 
-    def write_to(self, base_path, *, force, makepkg):
-        target_path = self._get_target_path(base_path)
-        super().write_to(target_path, force=force, makepkg=makepkg)
+    def write_to(self, options):
+        dep_options = options._replace(
+            base_path=self._get_target_path(options.base_path))
+        super().write_to(dep_options)
 
 
-def dispatch_package_builder(name, config, prefer):
+def dispatch_package_builder(name, config, options):
     ref = PackageRef(name)
     cls = Package if len(ref.arch_packaged) <= 1 else MultiPackage
-    return cls(ref, config, prefer)
+    return cls(ref, config, options)
 
 
 @lru_cache()
@@ -803,21 +804,11 @@ def get_config():
 
 
 @lru_cache()
-def create_package(
-        name,
-        force=False,
-        prefer=False,
-        skipdeps=False,
-        makepkg="--cleanbuild --nodeps",
-        base_path=None):
-
-    pkg = dispatch_package_builder(name, get_config(), prefer=prefer)
-    if base_path is None:
-        base_path = Path()
-    if not skipdeps:
-        pkg.write_deps_to(
-            base_path, force=force, prefer=prefer, makepkg=makepkg)
-    pkg.write_to(base_path, force=force, makepkg=makepkg)
+def create_package(name, options):
+    pkg = dispatch_package_builder(name, get_config(), options)
+    if not options.skipdeps:
+        pkg.write_deps_to(options)
+    pkg.write_to(options)
 
 
 def find_outdated():
@@ -856,13 +847,12 @@ def find_outdated():
     return owners
 
 
+Options = namedtuple("Options", "base_path force prefer skipdeps makepkg")
 _description = """\
 Create a PKGBUILD for a PyPI package and run makepkg.
 
 Default arguments can be set in the PYPI2PKGBUILD_ARGS environment variable.
 """
-
-
 def main():
     try:
         _run_shell("pkgfile pkgfile", stdout=DEVNULL)
@@ -891,7 +881,7 @@ def main():
         help="Find and build outdated packages; pass a list of (exact) PyPI"
              "names to *skip*.")
     parser.add_argument(
-        "-b", "--base-path", type=Path,
+        "-b", "--base-path", type=Path, default=Path(),
         help="Base path where the packages folders are created.")
     parser.add_argument(
         "-f", "--force", action="store_true",
@@ -919,7 +909,7 @@ def main():
     outdated, update_outdated = (
         vars(args).pop(k) for k in ["outdated", "update_outdated"])
     if outdated or update_outdated is not None:
-        if args.name:
+        if vars(args).pop("name", None):
             parser.error("--outdated{,-update} should be given with no name.")
         owners = find_outdated()
         if update_outdated is not None:
@@ -927,7 +917,7 @@ def main():
                 name, *_ = line.split()
                 if name in update_outdated:
                     continue
-                create_package(**{**vars(args), "name": name})
+                create_package(name, Options(**vars(args)))
         else:
             return
 
@@ -935,7 +925,7 @@ def main():
         if not args.name:
             parser.error("the following arguments are required: name")
         try:
-            create_package(**vars(args))
+            create_package(vars(args).pop("name"), Options(**vars(args)))
         except PackagingError as e:
             print(e, file=sys.stderr)
             return 1
