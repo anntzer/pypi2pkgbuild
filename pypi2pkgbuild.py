@@ -271,9 +271,17 @@ class ArchVersion(namedtuple("_ArchVersion", "epoch pkgver pkgrel")):
                 else "{0.pkgver}-{0.pkgrel}").format(self)
 
 
-WheelInfo = namedtuple("WheelInfo", "name version py abi platform")
+WheelInfo = namedtuple("WheelInfo", "name version build python abi platform")
 def parse_wheel(fname):
-    return WheelInfo(*Path(fname).stem.split("-"))
+    parts = Path(fname).stem.split("-")
+    if len(parts) == 5:
+        name, version, python, abi, platform = parts
+        build = ""
+    elif len(parts) == 6:
+        name, version, build, python, abi, platform = parts
+    else:
+        raise ValueError("Invalid wheel name: {}".format(fname))
+    return WheelInfo(name, version, build, python, abi, platform)
 
 
 class PackagingError(Exception):
@@ -564,7 +572,7 @@ class Package(_BasePackage):
         for url in unfiltered_urls:
             if url["packagetype"] == "bdist_wheel":
                 wheel_info = parse_wheel(url["path"])
-                if wheel_info.py not in PY_TAGS:
+                if wheel_info.python not in PY_TAGS:
                     continue
                 try:
                     order = prefer.index(
