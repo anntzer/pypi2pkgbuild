@@ -432,7 +432,7 @@ class PackageRefList(list):
 
 
 class _BasePackage(ABC):
-    build_cache = []
+    build_cache = [] # (package name, is_dep)
 
     def __init__(self):
         self._files = OrderedDict()
@@ -507,7 +507,7 @@ class _BasePackage(ABC):
             cwd=cwd)
         _run_shell("namcap PKGBUILD", cwd=cwd)
         _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
-        type(self).build_cache.append(fullname)
+        type(self).build_cache.append((fullname, options.is_dep))
 
 
 class Package(_BasePackage):
@@ -733,7 +733,7 @@ class Package(_BasePackage):
         for ref in self._depends:
             if not ref.exists:
                 # Dependency not found, build it too.
-                create_package(ref.pypi_name, options)
+                create_package(ref.pypi_name, options._replace(is_dep=True))
 
 
 class MetaPackage(_BasePackage):
@@ -783,15 +783,15 @@ class MetaPackage(_BasePackage):
 
     def write_deps_to(self, options):
         dep_options = options._replace(
-            base_path=self._get_target_path(options.base_path))
+            base_path=self._get_target_path(options.base_path),
+            is_dep=True)
         for pkg in self._arch_depends:
             pkg.write_deps_to(dep_options)
             pkg.write_to(dep_options)
 
     def write_to(self, options):
-        dep_options = options._replace(
-            base_path=self._get_target_path(options.base_path))
-        super().write_to(dep_options)
+        super().write_to(options._replace(
+            base_path=self._get_target_path(options.base_path)))
 
 
 def dispatch_package_builder(name, config, options):
@@ -857,7 +857,7 @@ def find_outdated():
 
 
 Options = namedtuple(
-    "Options", "base_path force pkgrel prefer skipdeps makepkg")
+    "Options", "base_path force pkgrel prefer skipdeps makepkg is_dep")
 _description = """\
 Create a PKGBUILD for a PyPI package and run makepkg.
 
@@ -931,7 +931,7 @@ def main():
                 name, *_ = line.split()
                 if name in update_outdated:
                     continue
-                create_package(name, Options(**vars(args)))
+                create_package(name, Options(**vars(args), is_dep=False))
         else:
             return
 
@@ -939,15 +939,24 @@ def main():
         if not args.name:
             parser.error("the following arguments are required: name")
         try:
-            create_package(vars(args).pop("name"), Options(**vars(args)))
+            create_package(vars(args).pop("name"),
+                           Options(**vars(args), is_dep=False))
         except PackagingError as exc:
             print(exc, file=sys.stderr)
             return 1
 
     if Package.build_cache:
-        cmd = "sudo pacman -U {} {}".format(
-            "-dd" if args.skipdeps else "",
-            " ".join(map(str, Package.build_cache)))
+        explicits = [fpath for fpath, is_dep in Package.build_cache
+                     if not is_dep]
+        deps = [fpath for fpath, is_dep in Package.build_cache if is_dep]
+        cmd = ""
+        if explicits:
+            cmd += "pacman -U {} {}; ".format(
+                "-dd" if args.skipdeps else "", " ".join(map(str, explicits)))
+        if deps:
+            cmd += "pacman -U --asdeps {} {}; ".format(
+                "-dd" if args.skipdeps else "", " ".join(map(str, deps)))
+        cmd = "sudo sh -c '{}'".format(cmd)
         _run_shell(cmd, check=False, verbose=True)
 
 
