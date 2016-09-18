@@ -389,8 +389,9 @@ class NonPyPackageRef:
 
 
 class PackageRef:
-    def __init__(self, name, *, force_new=False):
-        # If `force_new` is set, do not attempt to use the Arch Linux name.
+    def __init__(self, name, *, is_subpackage=False):
+        # If `is_subpackage` is set, do not attempt to use the Arch Linux name,
+        # and name the package python--$pkgname to prevent collision.
         self.orig_name = name  # A name or an URL.
         self.info = _get_pypi_info(name)
         self.pypi_name = self.info["info"]["name"] # Name on PyPI.
@@ -404,9 +405,11 @@ class PackageRef:
             "| cut -f1 | uniq".format(
                 self.wheel_name, sys.version_info),
             stdout=PIPE)
-        if force_new or not process.stdout:
-            self.pkgname = "python-{}{}".format(
-                self.pypi_name.lower(), self.info["_pkgname_suffix"])
+        if is_subpackage or not process.stdout:
+            self.pkgname = "python-{}{}{}".format(
+                "-" if is_subpackage else "",
+                self.pypi_name.lower(),
+                self.info["_pkgname_suffix"])
             self.arch_version = None
             self.arch_packaged = []
             self.exists = False
@@ -741,7 +744,7 @@ class MetaPackage(_BasePackage):
         super().__init__()
         self._ref = ref
         self._arch_depends = PackageRefList(
-            Package(PackageRef(name, force_new=True), config, options)
+            Package(PackageRef(name, is_subpackage=True), config, options)
             for name in ref.arch_packaged)
         self._arch_version = self._ref.arch_version._replace(
             pkgrel=self._ref.arch_version.pkgrel + ".99")
@@ -946,16 +949,17 @@ def main():
             return 1
 
     if Package.build_cache:
+        # Dependencies should come first.
+        deps = [fpath for fpath, is_dep in Package.build_cache if is_dep]
         explicits = [fpath for fpath, is_dep in Package.build_cache
                      if not is_dep]
-        deps = [fpath for fpath, is_dep in Package.build_cache if is_dep]
         cmd = ""
-        if explicits:
-            cmd += "pacman -U {} {}; ".format(
-                "-dd" if args.skipdeps else "", " ".join(map(str, explicits)))
         if deps:
             cmd += "pacman -U --asdeps {} {}; ".format(
                 "-dd" if args.skipdeps else "", " ".join(map(str, deps)))
+        if explicits:
+            cmd += "pacman -U {} {}; ".format(
+                "-dd" if args.skipdeps else "", " ".join(map(str, explicits)))
         cmd = "sudo sh -c '{}'".format(cmd)
         _run_shell(cmd, check=False, verbose=True)
 
