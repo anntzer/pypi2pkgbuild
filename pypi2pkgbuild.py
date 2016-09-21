@@ -188,7 +188,8 @@ fi
 build() {
     if _is_wheel; then return; fi
     cd "$srcdir/$(_dist_name)"
-    if ! pip wheel -v --no-deps --wheel-dir "$srcdir" .; then return; fi
+    if ! pip wheel -v --no-deps --wheel-dir="$srcdir" \\
+        --global-option=build --global-option=-j$(nproc) .; then return; fi
     license_filename=$(_license_filename)
     if [[ $license_filename ]]; then
         cp "$license_filename" "$srcdir/LICENSE"
@@ -207,7 +208,7 @@ check() {
 package() {
     cd "$srcdir"
     # pypa/pip#3063: pip always checks for a globally installed version.
-    pip --quiet install --root="$pkgdir" --no-deps --ignore-installed \
+    pip --quiet install --root="$pkgdir" --no-deps --ignore-installed \\
         "$(if ls *.whl >/dev/null 2>&1; then echo *.whl; else echo ./$(_dist_name); fi)"
     if [[ -f LICENSE ]]; then
         install -D -m644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
