@@ -532,7 +532,7 @@ class Package(_BasePackage):
             raise PackagingError(
                 "No URL available for package {!r}.".format(self.pkgname))
 
-        self._find_arch_makedepends()
+        self._find_arch_makedepends(options)
         for nonpy_dep in [ref for ref in self._makedepends
                           if isinstance(ref, NonPyPackageRef)]:
             _run_shell("if ! pacman -Q {0} >/dev/null 2>&1; then "
@@ -620,7 +620,7 @@ class Package(_BasePackage):
                     "{0._ref.pypi_name}-{0.pkgver}".format(self))
         return self._srctree.path
 
-    def _find_arch_makedepends(self):
+    def _find_arch_makedepends(self, options):
         self._arch = ["any"]
         self._makedepends = PackageRefList([PackageRef("pip")])
         archs = sorted(
@@ -629,10 +629,12 @@ class Package(_BasePackage):
         if self._urls[0]["packagetype"] == "bdist_wheel":
             self._arch = archs
         else:
-            if list(self._get_srctree().glob("**/*.i")):
+            if ("swig" in options.guess_makedeps
+                    and list(self._get_srctree().glob("**/*.i"))):
                 self._arch = ["i686", "x86_64"]
                 self._makedepends.append(NonPyPackageRef("swig"))
-            if list(self._get_srctree().glob("**/*.pyx")):
+            if ("cython" in options.guess_makedeps
+                    and list(self._get_srctree().glob("**/*.pyx"))):
                 self._arch = ["i686", "x86_64"]
                 self._makedepends.append(PackageRef("Cython"))
             if not "any" in archs and list(self._get_srctree().glob("**/*.c")):
@@ -861,7 +863,8 @@ def find_outdated():
 
 
 Options = namedtuple(
-    "Options", "base_path force pkgrel prefer skipdeps makepkg is_dep")
+    "Options",
+    "base_path force pkgrel guess_makedeps prefer skipdeps makepkg is_dep")
 _description = """\
 Create a PKGBUILD for a PyPI package and run makepkg.
 
@@ -905,10 +908,14 @@ def main():
         help="Force value of $pkgrel (not applicable to metapackages).  "
              "Set e.g. to 99 to override AUR packages.")
     parser.add_argument(
+        "-g", "--guess-makedeps", default="cython:swig",
+        type=lambda s: tuple(s.split(":")),  # Keep it hashable.
+        help="`:`-separated list of makedepends that will be guessed.")
+    parser.add_argument(
         "-p", "--prefer", metavar="P",
         default="anywheel:sdist:manylinuxwheel",
         type=lambda s: tuple(s.split(":")),  # Keep it hashable.
-        help="Preference order for dists.")
+        help="`:`-separated preference order for dists.")
     parser.add_argument(
         "-s", "--skipdeps", action="store_true",
         help="Don't generate PKGBUILD for dependencies.")

@@ -5,14 +5,16 @@ Issues
   supported (needs upstream support from `pip show`).
     - `scikit-image` depends on `dask[array]`.
 
-- Special flags may be required (?) for optimized builds of `numpy` and `scipy`.
-
 - License support is incomplete.
     - e.g. `matplotlib` has a `LICENSE` *folder*.
 
 - `git` packages are cloned twice; we may be able to cache them.
 
 - Meta packages are fully rebuilt even if only a component needs to be built.
+
+- `numpy` and `scipy` seem to link to `openblas` correctly, but the resulting
+  packages should be named `python-{numpy,scipy}-openblas`.  This probably
+  means calling `pacman -Qo` before calling `pkgfile`.
 
 Arch packaging
 ==============
