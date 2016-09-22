@@ -267,22 +267,30 @@ def _run_shell(*args, **kwargs):
 
 
 class ArchVersion(namedtuple("_ArchVersion", "epoch pkgver pkgrel")):
+    @classmethod
+    def parse(cls, s):
+        epoch, pkgver, pkgrel = (
+            re.fullmatch(r"(?:(.*):)?(.*)-(.*)", s).groups())
+        return cls(epoch or "", pkgver, pkgrel)
+
     def __str__(self):
         return ("{0.epoch}:{0.pkgver}-{0.pkgrel}" if self.epoch
                 else "{0.pkgver}-{0.pkgrel}").format(self)
 
 
-WheelInfo = namedtuple("WheelInfo", "name version build python abi platform")
-def parse_wheel(fname):
-    parts = Path(fname).stem.split("-")
-    if len(parts) == 5:
-        name, version, python, abi, platform = parts
-        build = ""
-    elif len(parts) == 6:
-        name, version, build, python, abi, platform = parts
-    else:
-        raise ValueError("Invalid wheel name: {}".format(fname))
-    return WheelInfo(name, version, build, python, abi, platform)
+class WheelInfo(
+        namedtuple("_WheelInfo", "name version build python abi platform")):
+    @classmethod
+    def parse(cls, fname):
+        parts = Path(fname).stem.split("-")
+        if len(parts) == 5:
+            name, version, python, abi, platform = parts
+            build = ""
+        elif len(parts) == 6:
+            name, version, build, python, abi, platform = parts
+        else:
+            raise ValueError("Invalid wheel name: {}".format(fname))
+        return cls(name, version, build, python, abi, platform)
 
 
 class PackagingError(Exception):
@@ -384,6 +392,28 @@ def _get_pypi_info(name):
         return request
 
 
+def _get_site_packages_location():
+    return (
+        "{0.prefix}/lib/python{0.version_info.major}.{0.version_info.minor}"
+        "/site-packages".format(sys))
+
+
+def _find_installed(pypi_name):
+    parts = _run_shell(
+        # Ignore case due e.g. to "cycler" (pip) / "Cycler" (PyPI).
+        # {dist,egg}-info; don't be confused e.g. by pytest-cov.pth.
+        "(shopt -s nocaseglob; pacman -Qo {}/{}-*-info) "
+        "| rev | cut -d' ' -f1,2 | rev".format(
+            _get_site_packages_location(), pypi_name.replace("-", "_")),
+        stdout=PIPE, stderr=DEVNULL).stdout[:-1].split()
+    if len(parts) == 0:
+        return
+    else:
+        # Raise if there is an ambiguity.
+        pkgname, version = parts
+        return pkgname, ArchVersion.parse(version)
+
+
 class NonPyPackageRef:
     def __init__(self, pkgname):
         self.pkgname = pkgname
@@ -397,35 +427,41 @@ class PackageRef:
         self.info = _get_pypi_info(name)
         self.pypi_name = self.info["info"]["name"] # Name on PyPI.
         self.wheel_name = self.pypi_name.replace("-", "_") # Name for wheels.
-        # Name for Arch Linux.  Different cases may be used for pip and PyPI
-        # (e.g. "cycler" is "Cycler" on PyPI) so just ignore it.
-        # FIXME Also call pacman -Qo to check if the package has been installed
-        # from the AUR (see e.g. pipdeptree)?  (At least print a warning?)
-        process = _run_shell(
-            r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
-            "| cut -f1 | uniq".format(
-                self.wheel_name, sys.version_info),
-            stdout=PIPE)
-        if is_subpackage or not process.stdout:
-            self.pkgname = "python-{}{}{}".format(
-                "-" if is_subpackage else "",
-                self.pypi_name.lower(),
-                self.info["_pkgname_suffix"])
-            self.arch_version = None
-            self.arch_packaged = []
-            self.exists = False
-        else:
-            self.pkgname = pkgname = process.stdout[:-1]  # Strip newline.
-            self.pkgname, epoch, pkgver, pkgrel = (
-                re.fullmatch(r"[\w-]+/([\w-]+) (?:(.*):)?(.*)-(.*)\n",
-                             process.stdout).groups())
-            self.arch_version = ArchVersion(epoch or "", pkgver, pkgrel)
-            packaged = _run_shell(
+        # Default values; we'll check if the package already exists.
+        # Name for Arch Linux.
+        pkgname = "python-{}{}{}".format("-" if is_subpackage else "",
+                                         self.pypi_name.lower(),
+                                         self.info["_pkgname_suffix"])
+        arch_version = None
+        arch_packaged = []
+        exists = False
+        if not is_subpackage:
+            try:
+                pkgname, arch_version = _find_installed(self.pypi_name)
+                exists = True
+            except TypeError:  # `_find_installed` returned None.
+                try:
+                    # See `_find_installed` re: case.
+                    pkgname, version = _run_shell(
+                        r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
+                        "| cut -f1 | uniq | cut -d/ -f2".format(
+                            self.wheel_name, sys.version_info),
+                        stdout=PIPE).stdout[:-1].split()
+                    arch_version = ArchVersion.parse(version)
+                    exists = True
+                except ValueError:  # No output from `pkgfile`.
+                    pass
+        if exists:
+            arch_packaged = _run_shell(
                 "pkgfile -l {} "
                 r"| grep -Po '(?<=site-packages/)[^-]*(?=.*\.egg-info/?$)'".
-                format(pkgname), stdout=PIPE).stdout.splitlines()
-            self.arch_packaged = packaged
-            self.exists = True
+                format(pkgname), stdout=PIPE, check=False).stdout.splitlines()
+
+        # Final values.
+        self.pkgname = pkgname
+        self.arch_version = arch_version
+        self.arch_packaged = arch_packaged
+        self.exists = exists
 
 
 class PackageRefList(list):
@@ -551,7 +587,7 @@ class Package(_BasePackage):
             for url in self._urls:
                 if url["packagetype"] != "bdist_wheel":
                     continue
-                wheel_info = parse_wheel(url["path"])
+                wheel_info = WheelInfo.parse(url["path"])
                 if wheel_info.platform == "any":
                     src_template = WHEEL_ANY_SOURCE
                 else:
@@ -575,7 +611,7 @@ class Package(_BasePackage):
         urls = []
         for url in unfiltered_urls:
             if url["packagetype"] == "bdist_wheel":
-                wheel_info = parse_wheel(url["path"])
+                wheel_info = WheelInfo.parse(url["path"])
                 if wheel_info.python not in PY_TAGS:
                     continue
                 try:
@@ -624,7 +660,7 @@ class Package(_BasePackage):
         self._arch = ["any"]
         self._makedepends = PackageRefList([PackageRef("pip")])
         archs = sorted(
-            {PLATFORM_TAGS[parse_wheel(url["path"]).platform]
+            {PLATFORM_TAGS[WheelInfo.parse(url["path"]).platform]
              for url in self._urls if url["packagetype"] == "bdist_wheel"})
         if self._urls[0]["packagetype"] == "bdist_wheel":
             self._arch = archs
@@ -838,21 +874,15 @@ def find_outdated():
     owners = {}
     for line, name, loc in zip(lines, names, locs):
         if loc == syswide_location:
-            pkgname, pkgver_full = _run_shell(
-                # {dist,egg}-info; don't be confused e.g. by pytest-cov.pth.
-                # This implementation raises if there's any ambibuity.
-                "pacman -Qo {}/{}-*-info | rev | cut -d' ' -f1,2 | rev"
-                .format(syswide_location, name.replace("-", "_")),
-                stdout=PIPE).stdout[:-1].split()
+            pkgname, arch_version = _find_installed(name)
             # Check that pypi's version is indeed newer.  Some packages
             # mis-report their version to pip (e.g., slicerator 0.9.7's Github
             # release).
             # FIXME(?) Emit a warning?  How does this behave on metapackages?
-            pkgver, pkgrel = pkgver_full.split("-")
             *_, pypi_ver, pypi_type = line.split()
-            if pkgver == pypi_ver:
+            if arch_version.pkgver == pypi_ver:
                 continue
-            owners.setdefault("{} {}".format(pkgname, pkgver_full),
+            owners.setdefault("{} {}".format(pkgname, arch_version),
                               []).append(line)
     owners = OrderedDict(sorted(owners.items()))
     for owner, lines in owners.items():

@@ -12,9 +12,9 @@ Issues
 
 - Meta packages are fully rebuilt even if only a component needs to be built.
 
-- `numpy` and `scipy` seem to link to `openblas` correctly, but the resulting
-  packages should be named `python-{numpy,scipy}-openblas`.  This probably
-  means calling `pacman -Qo` before calling `pkgfile`.
+- `scipy` fails to build, probably due to numpy/numpy#7779 (`LDFLAGS` set by
+  `makepkg` strips defaults).  Setting `LDFLAGS` to `"$(. /etc/makepkg.conf;
+  echo $LDFLAGS) -shared"` does not seem to help, though.
 
 Arch packaging
 ==============
