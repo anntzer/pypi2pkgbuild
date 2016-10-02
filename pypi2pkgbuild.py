@@ -22,6 +22,8 @@ import sys
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 import urllib.request
 
+from pkg_resources.extern.packaging.version import parse as version_parse
+
 
 LOGGER = logging.getLogger(Path(__file__).stem)
 
@@ -362,7 +364,7 @@ def _get_metadata(name, makedepends_cython):
 
 
 @lru_cache()
-def _get_pypi_info(name):
+def _get_pypi_info(name, *, pre=False, _version=""):
     if name.startswith("git+"):
         metadata = _get_metadata(name, True)
         try:  # Normalize the name if available on PyPI.
@@ -381,13 +383,21 @@ def _get_pypi_info(name):
     else:
         try:
             r = urllib.request.urlopen(
-                "https://pypi.python.org/pypi/{}/json".format(name))
+                "https://pypi.python.org/pypi/{}/{}/json"
+                .format(name, _version))
         except urllib.error.HTTPError:
             raise PackagingError("Package {!r} not found.".format(name))
         # Load as OrderedDict so that always the same sdist is chosen if e.g.
         # both zip and tgz are available.
         request = json.loads(r.read().decode(r.headers.get_param("charset")),
-                            object_pairs_hook=OrderedDict)
+                             object_pairs_hook=OrderedDict)
+        if not _version:
+            versions = [version_parse(release)
+                        for release in request["releases"]]
+            max_version = str(max(version for version in versions
+                                  if not (not pre and version.is_prerelease)))
+            if max_version != request["info"]["version"]:
+                return _get_pypi_info(name, pre=pre, _version=max_version)
         request["_pkgname_suffix"] = ""
         return request
 
@@ -420,11 +430,11 @@ class NonPyPackageRef:
 
 
 class PackageRef:
-    def __init__(self, name, *, is_subpackage=False):
+    def __init__(self, name, *, pre=False, is_subpackage=False):
         # If `is_subpackage` is set, do not attempt to use the Arch Linux name,
         # and name the package python--$pkgname to prevent collision.
         self.orig_name = name  # A name or an URL.
-        self.info = _get_pypi_info(name)
+        self.info = _get_pypi_info(name, pre=pre)
         self.pypi_name = self.info["info"]["name"] # Name on PyPI.
         self.wheel_name = self.pypi_name.replace("-", "_") # Name for wheels.
         # Default values; we'll check if the package already exists.
@@ -563,7 +573,7 @@ class Package(_BasePackage):
         LOGGER.info("Packaging %s %s",
                     self.pkgname, ref.info["info"]["version"])
         self._urls = self._filter_and_sort_urls(ref.info["urls"],
-                                                options.prefer)
+                                                options.pkgtypes)
         if not self._urls:
             raise PackagingError(
                 "No URL available for package {!r}.".format(self.pkgname))
@@ -607,7 +617,7 @@ class Package(_BasePackage):
 
         self._pkgbuild = stream.getvalue()
 
-    def _filter_and_sort_urls(self, unfiltered_urls, prefer):
+    def _filter_and_sort_urls(self, unfiltered_urls, pkgtypes):
         urls = []
         for url in unfiltered_urls:
             if url["packagetype"] == "bdist_wheel":
@@ -615,7 +625,7 @@ class Package(_BasePackage):
                 if wheel_info.python not in PY_TAGS:
                     continue
                 try:
-                    order = prefer.index(
+                    order = pkgtypes.index(
                         {"any": "anywheel",
                          "manylinux1_i686": "manylinuxwheel",
                          "manylinux1_x86_64": "manylinuxwheel"}[
@@ -633,7 +643,7 @@ class Package(_BasePackage):
                         urls.append((url, order))
             elif url["packagetype"] == "sdist":
                 with suppress(ValueError):
-                    urls.append((url, prefer.index("sdist")))
+                    urls.append((url, pkgtypes.index("sdist")))
             else:  # Skip other dists.
                 continue
         return [url for url, key in sorted(urls, key=lambda kv: kv[1])]
@@ -665,11 +675,11 @@ class Package(_BasePackage):
         if self._urls[0]["packagetype"] == "bdist_wheel":
             self._arch = archs
         else:
-            if ("swig" in options.guess_makedeps
+            if ("swig" in options.guess_makedepends
                     and list(self._get_srctree().glob("**/*.i"))):
                 self._arch = ["i686", "x86_64"]
                 self._makedepends.append(NonPyPackageRef("swig"))
-            if ("cython" in options.guess_makedeps
+            if ("cython" in options.guess_makedepends
                     and list(self._get_srctree().glob("**/*.pyx"))):
                 self._arch = ["i686", "x86_64"]
                 self._makedepends.append(PackageRef("Cython"))
@@ -837,7 +847,7 @@ class MetaPackage(_BasePackage):
 
 
 def dispatch_package_builder(name, config, options):
-    ref = PackageRef(name)
+    ref = PackageRef(name, pre=options.pre)
     cls = Package if len(ref.arch_packaged) <= 1 else MetaPackage
     return cls(ref, config, options)
 
@@ -893,8 +903,8 @@ def find_outdated():
 
 
 Options = namedtuple(
-    "Options",
-    "base_path force pkgrel guess_makedeps prefer skipdeps makepkg is_dep")
+    "Options", "base_path force pre pkgrel guess_makedepends pkgtypes "
+               "skipdeps makepkg is_dep")
 _description = """\
 Create a PKGBUILD for a PyPI package and run makepkg.
 
@@ -934,15 +944,19 @@ def main():
         "-f", "--force", action="store_true",
         help="Overwrite a previously existing PKGBUILD.")
     parser.add_argument(
+        "-p", "--pre", action="store_true",
+        help="Include pre-releases.")
+    parser.add_argument(
         "-r", "--pkgrel", default="00",
         help="Force value of $pkgrel (not applicable to metapackages).  "
              "Set e.g. to 99 to override AUR packages.")
     parser.add_argument(
-        "-g", "--guess-makedeps", default="cython:swig",
+        "-g", "--guess-makedepends", metavar="MAKEDEPENDS",
+        default="cython:swig",
         type=lambda s: tuple(s.split(":")),  # Keep it hashable.
         help="`:`-separated list of makedepends that will be guessed.")
     parser.add_argument(
-        "-p", "--prefer", metavar="P",
+        "-t", "--pkgtypes",
         default="anywheel:sdist:manylinuxwheel",
         type=lambda s: tuple(s.split(":")),  # Keep it hashable.
         help="`:`-separated preference order for dists.")
@@ -950,7 +964,7 @@ def main():
         "-s", "--skipdeps", action="store_true",
         help="Don't generate PKGBUILD for dependencies.")
     parser.add_argument(
-        "-m", "--makepkg", metavar="M",
+        "-m", "--makepkg", metavar="MAKEPKG_OPTS",
         default="--cleanbuild --nodeps",
         help="Additional arguments to pass to makepkg.")
     env_args = eval(  # Parse the environment variable arguments.

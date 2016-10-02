@@ -4,9 +4,10 @@ PyPI2PKGBUILD
 Convert PyPI entries to Arch Linux PKGBUILDs, inspired from
 [pip2arch](https://github.com/bluepeppers/pip2arch).
 
-`pypi2pkgbuild.py PYPINAME` creates a PKGBUILD (in a git repo) for the given
-PyPI package.  Because PyPI's dependencies are somewhat unreliable, it installs
-the package in a virtualenv to figure out the dependencies.
+`pypi2pkgbuild.py PYPINAME` creates a PKGBUILD (in a git repo) for the latest
+version of the given PyPI package (including prereleases if the `--pre` flag is
+passed.  Because PyPI's dependencies are somewhat unreliable, it installs the
+package in a virtualenv to figure out the dependencies.
 
 A `-git` package can be built with `pypi2pkbguild.py git+https://...`.
 
@@ -28,7 +29,8 @@ Improvements over pip2arch
 --------------------------
 
 - Supports wheels (the default is to prefer `any`-platform wheels, then
-  `sdist`s, then `manylinux1` wheels, but this can be changed using `--prefer`).
+  `sdist`s, then `manylinux1` wheels, but this can be changed using
+  `--pkgtypes`).
 - Resolves Python dependencies via installation in a temporary virtualenv, and
   also creates PKGBUILDs for those that are not available as official packages.
 - Resolves binary dependencies via `namcap` and adds them to the `depends`
@@ -45,7 +47,7 @@ Build-time dependencies
 
 `pypi2pkgbuild.py` attempts to guess whether `Cython` and `SWIG` are build-time
 dependencies by checking for the presence of `.pyx` and `.i` files,
-respectively.  If this is not desired, set the `--guess-makedeps` option
+respectively.  If this is not desired, set the `--guess-makedepends` option
 accordingly.
 
 `pypi2pkgbuild.py` guesses whether `numpy` is a build-time dependency by
