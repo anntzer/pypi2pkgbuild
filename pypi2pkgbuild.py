@@ -986,7 +986,10 @@ def main():
                 name, *_ = line.split()
                 if name in update_outdated:
                     continue
-                create_package(name, Options(**vars(args), is_dep=False))
+                try:
+                    create_package(name, Options(**vars(args), is_dep=False))
+                except PackagingError as exc:
+                    LOGGER.error("%s", exc)
         else:
             return
 
