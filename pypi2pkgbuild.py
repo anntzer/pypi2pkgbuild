@@ -421,6 +421,11 @@ def _find_installed(pypi_name):
     else:
         # Raise if there is an ambiguity.
         pkgname, version = parts
+        if (pkgname.endswith("-git")
+                and _run_shell("pacman -Qi {} | grep 'Conflicts With *: {}$'"
+                               .format(pkgname, pkgname[:-len("-git")]),
+                               stdout=DEVNULL)):
+            pkgname = pkgname[:-len("-git")]
         return pkgname, ArchVersion.parse(version)
 
 
@@ -448,6 +453,7 @@ class PackageRef:
         if not is_subpackage:
             try:
                 pkgname, arch_version = _find_installed(self.pypi_name)
+                pkgname += self.info["_pkgname_suffix"]
                 exists = True
             except TypeError:  # `_find_installed` returned None.
                 try:
@@ -457,6 +463,7 @@ class PackageRef:
                         "| cut -f1 | uniq | cut -d/ -f2".format(
                             self.wheel_name, sys.version_info),
                         stdout=PIPE).stdout[:-1].split()
+                    pkgname += self.info["_pkgname_suffix"]
                     arch_version = ArchVersion.parse(version)
                     exists = True
                 except ValueError:  # No output from `pkgfile`.
