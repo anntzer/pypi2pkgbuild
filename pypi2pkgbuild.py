@@ -489,7 +489,7 @@ class PackageRefList(list):
 
 
 class _BasePackage(ABC):
-    build_cache = [] # (package name, is_dep)
+    build_cache = OrderedDict() # package_name: (package path, is_dep)
 
     def __init__(self):
         self._files = OrderedDict()
@@ -564,7 +564,7 @@ class _BasePackage(ABC):
             cwd=cwd)
         _run_shell("namcap PKGBUILD", cwd=cwd)
         _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
-        type(self).build_cache.append((fullname, options.is_dep))
+        type(self).build_cache[self.pkgname] = (fullname, options.is_dep)
 
 
 class Package(_BasePackage):
@@ -1010,19 +1010,17 @@ def main():
             print(exc, file=sys.stderr)
             return 1
 
+    cmd = ""
     if Package.build_cache:
-        # Dependencies should come first.
-        deps = [fpath for fpath, is_dep in Package.build_cache if is_dep]
-        explicits = [fpath for fpath, is_dep in Package.build_cache
-                     if not is_dep]
-        cmd = ""
+        cmd += "pacman -U{} {}".format(
+            "dd" if args.skipdeps else "",
+            " ".join(
+                str(fpath) for fpath, is_dep in Package.build_cache.values()))
+        deps = [name for name, (fpath, is_dep) in Package.build_cache.items()
+                if is_dep]
         if deps:
-            cmd += "pacman -U --asdeps {} {}; ".format(
-                "-dd" if args.skipdeps else "", " ".join(map(str, deps)))
-        if explicits:
-            cmd += "pacman -U {} {}; ".format(
-                "-dd" if args.skipdeps else "", " ".join(map(str, explicits)))
-        cmd = "sudo sh -c '{}'".format(cmd)
+            cmd += "; pacman -D --asdeps {}".format(" ".join(deps))
+        cmd = "sudo sh -c {}".format(shlex.quote(cmd))
         _run_shell(cmd, check=False, verbose=True)
 
 
