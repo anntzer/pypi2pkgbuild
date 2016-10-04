@@ -1,7 +1,7 @@
 PyPI2PKGBUILD
 =============
 
-Convert PyPI entries to Arch Linux PKGBUILDs, inspired from
+Convert PyPI entries to Arch Linux packages, inspired from
 [pip2arch](https://github.com/bluepeppers/pip2arch).
 
 `pypi2pkgbuild.py PYPINAME` creates a PKGBUILD (in a git repo) for the latest

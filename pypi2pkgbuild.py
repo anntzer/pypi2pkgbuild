@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+"""Convert PyPI entries to Arch Linux packages.
+"""
+
 import abc
 from abc import ABC
 from argparse import (ArgumentParser, ArgumentDefaultsHelpFormatter,
@@ -517,9 +520,9 @@ class _BasePackage(ABC):
             # Only one of the archs will be globbed successfully.
             fullname, = sum(
                 (list(cwd.glob(fname + ".*"))
-                for fname in (
-                    _run_shell("makepkg --packagelist", cwd=cwd, stdout=PIPE).
-                    stdout.splitlines())),
+                 for fname in (
+                     _run_shell("makepkg --packagelist", cwd=cwd, stdout=PIPE)
+                     .stdout.splitlines())),
                 [])
             return fullname
 
@@ -535,8 +538,8 @@ class _BasePackage(ABC):
         extra_deps_re = "(?<=E: Dependency ).*(?= detected and not included)"
         extra_deps = [
             match.group(0)
-            for match in filter(None, (re.search(extra_deps_re, line)
-                                for line in namcap))]
+            for match in map(re.compile(extra_deps_re).search, namcap)
+            if match]
         pkgbuild_contents = pkgbuild_contents.replace(
             "## EXTRA_DEPENDS ##",
             "depends+=({})".format(" ".join(extra_deps)))
@@ -559,8 +562,7 @@ class _BasePackage(ABC):
                 r"\(Dependency included and not needed"
                 r"\|Unused shared library '/usr/lib/libpthread\.so\.0'\)"
             "\" "
-            "|| true".
-            format(fullname.name),
+            "|| true".format(fullname.name),
             cwd=cwd)
         _run_shell("namcap PKGBUILD", cwd=cwd)
         _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
@@ -866,8 +868,8 @@ def get_config():
                          'prepare() { echo "$PACKAGER"; exit 0; }')
         Path(tmpdir, "PKGBUILD").write_text(mini_pkgbuild)
         maintainer = (
-            _run_shell("makepkg", cwd=tmpdir, stdout=PIPE, stderr=PIPE).
-            stdout[:-1])  # Strip newline.
+            _run_shell("makepkg", cwd=tmpdir, stdout=PIPE, stderr=PIPE)
+            .stdout[:-1])  # Strip newline.
     return {"maintainer": maintainer}
 
 
