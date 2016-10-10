@@ -434,12 +434,12 @@ def _find_installed(pypi_name):
 
 class NonPyPackageRef:
     def __init__(self, pkgname):
-        self.pkgname = pkgname
+        self.pkgname = self.depname = pkgname
 
 
 class PackageRef:
-    def __init__(self, name, *, pre=False, is_subpackage=False):
-        # If `is_subpackage` is set, do not attempt to use the Arch Linux name,
+    def __init__(self, name, *, pre=False, subpkg_of=None):
+        # If `subpkg_of` is set, do not attempt to use the Arch Linux name,
         # and name the package python--$pkgname to prevent collision.
         self.orig_name = name  # A name or an URL.
         self.info = _get_pypi_info(name, pre=pre)
@@ -447,29 +447,34 @@ class PackageRef:
         self.wheel_name = self.pypi_name.replace("-", "_") # Name for wheels.
         # Default values; we'll check if the package already exists.
         # Name for Arch Linux.
-        pkgname = "python-{}{}{}".format("-" if is_subpackage else "",
+        pkgname = "python-{}{}{}".format("-" if subpkg_of else "",
                                          self.pypi_name.lower(),
                                          self.info["_pkgname_suffix"])
         arch_version = None
         arch_packaged = []
         exists = False
-        if not is_subpackage:
+        if not subpkg_of:
+            # First check the official packages: we may have installed locally
+            # `python--ipython` but we want to update starting from `ipython`
+            # again.
+            # Then check the installed packages: they may have inherited
+            # non-standard names from AUR (e.g. `pipdeptree`).
             try:
-                pkgname, arch_version = _find_installed(self.pypi_name)
+                # See `_find_installed` re: case.
+                pkgname, version = _run_shell(
+                    r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
+                    "| cut -f1 | uniq | cut -d/ -f2".format(
+                        self.wheel_name, sys.version_info),
+                    stdout=PIPE).stdout[:-1].split()
                 pkgname += self.info["_pkgname_suffix"]
+                arch_version = ArchVersion.parse(version)
                 exists = True
-            except TypeError:  # `_find_installed` returned None.
+            except ValueError:  # No output from `pkgfile`.
                 try:
-                    # See `_find_installed` re: case.
-                    pkgname, version = _run_shell(
-                        r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
-                        "| cut -f1 | uniq | cut -d/ -f2".format(
-                            self.wheel_name, sys.version_info),
-                        stdout=PIPE).stdout[:-1].split()
+                    pkgname, arch_version = _find_installed(self.pypi_name)
                     pkgname += self.info["_pkgname_suffix"]
-                    arch_version = ArchVersion.parse(version)
                     exists = True
-                except ValueError:  # No output from `pkgfile`.
+                except TypeError:  # `_find_installed` returned None.
                     pass
         if exists:
             arch_packaged = _run_shell(
@@ -479,15 +484,19 @@ class PackageRef:
 
         # Final values.
         self.pkgname = pkgname
+        # Dependencies should list the metapackage (which may be otherwise
+        # unrelated) so that the metapackage can get updated into an official
+        # package without breaking dependencies.
+        self.depname = (subpkg_of if subpkg_of is not None else self).pkgname
         self.arch_version = arch_version
         self.arch_packaged = arch_packaged
         self.exists = exists
 
 
-class PackageRefList(list):
+class DependsList(list):
     def __format__(self, fmt):
         if fmt == "":
-            return " ".join(_unique(ref.pkgname for ref in self))
+            return " ".join(_unique(ref.depname for ref in self))
         return super().__format__(fmt)  # Raise TypeError.
 
 
@@ -677,7 +686,7 @@ class Package(_BasePackage):
 
     def _find_arch_makedepends(self, options):
         self._arch = ["any"]
-        self._makedepends = PackageRefList([PackageRef("pip")])
+        self._makedepends = DependsList([PackageRef("pip")])
         archs = sorted(
             {PLATFORM_TAGS[WheelInfo.parse(url["path"]).platform]
              for url in self._urls if url["packagetype"] == "bdist_wheel"})
@@ -699,7 +708,7 @@ class Package(_BasePackage):
                 self._arch = ["i686", "x86_64"]
 
     def _find_depends(self, metadata):
-        return PackageRefList(map(PackageRef, metadata["requires"]))
+        return DependsList(map(PackageRef, metadata["requires"]))
 
     def _find_license(self):
         info = self._ref.info["info"]
@@ -788,7 +797,7 @@ class Package(_BasePackage):
     makedepends = property(
         lambda self: self._makedepends)
     checkdepends = property(
-        lambda self: PackageRefList())
+        lambda self: DependsList())
 
     def write_deps_to(self, options):
         for ref in self._depends:
@@ -801,12 +810,13 @@ class MetaPackage(_BasePackage):
     def __init__(self, ref, config, options):
         super().__init__()
         self._ref = ref
-        self._arch_depends = PackageRefList(
-            Package(PackageRef(name, is_subpackage=True), config, options)
-            for name in ref.arch_packaged)
         self._arch_version = self._ref.arch_version._replace(
             pkgrel=self._ref.arch_version.pkgrel + ".99")
-        for pkg in self._arch_depends:
+        self._subpkgrefs = DependsList(
+            PackageRef(name, subpkg_of=ref) for name in ref.arch_packaged)
+        self._subpkgs = [
+            Package(ref, config, options) for ref in self._subpkgrefs]
+        for pkg in self._subpkgs:
             pkg._pkgbuild = pkg._pkgbuild.replace(
                 "conflicts=()",
                 "conflicts=('{0}<{1}' '{0}>{1}')".format(
@@ -833,11 +843,11 @@ class MetaPackage(_BasePackage):
     license = property(
         lambda self: "CCPL:by")  # Individual components retain their license.
     depends = property(
-        lambda self: self._arch_depends)
+        lambda self: self._subpkgrefs)
     makedepends = property(
-        lambda self: PackageRefList())
+        lambda self: DependsList())
     checkdepends = property(
-        lambda self: PackageRefList())
+        lambda self: DependsList())
 
     def _get_target_path(self, base_path):
         return base_path / ("meta:" + self._ref.pkgname)
@@ -846,7 +856,7 @@ class MetaPackage(_BasePackage):
         dep_options = options._replace(
             base_path=self._get_target_path(options.base_path),
             is_dep=True)
-        for pkg in self._arch_depends:
+        for pkg in self._subpkgs:
             pkg.write_deps_to(dep_options)
             pkg.write_to(dep_options)
 
@@ -984,23 +994,24 @@ def main():
     args = parser.parse_args(env_args + sys.argv[1:])
     logging.basicConfig(level="DEBUG" if vars(args).pop("debug") else "INFO")
 
-    outdated, update_outdated = (
-        vars(args).pop(k) for k in ["outdated", "update_outdated"])
-    if outdated or update_outdated is not None:
+    outdated, update_outdated = map(
+        vars(args).pop, ["outdated", "update_outdated"])
+
+    if outdated:
         if vars(args).pop("name", None):
-            parser.error("--outdated{,-update} should be given with no name.")
-        owners = find_outdated()
-        if update_outdated is not None:
-            for line in sum(owners.values(), []):
-                name, *_ = line.split()
-                if name in update_outdated:
-                    continue
-                try:
-                    create_package(name, Options(**vars(args), is_dep=False))
-                except PackagingError as exc:
-                    LOGGER.error("%s", exc)
-        else:
-            return
+            parser.error("--outdated should be given with no name.")
+        find_outdated()
+
+    elif update_outdated is not None:
+        vars(args).pop("name")  # Should be None anyways.
+        for line in sum(find_outdated().values(), []):
+            name, *_ = line.split()
+            if name in update_outdated:
+                continue
+            try:
+                create_package(name, Options(**vars(args), is_dep=False))
+            except PackagingError as exc:
+                LOGGER.error("%s", exc)
 
     else:
         if not args.name:
@@ -1009,7 +1020,7 @@ def main():
             create_package(vars(args).pop("name"),
                            Options(**vars(args), is_dep=False))
         except PackagingError as exc:
-            print(exc, file=sys.stderr)
+            LOGGER.exception("")
             return 1
 
     cmd = ""
