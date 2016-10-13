@@ -113,9 +113,9 @@ pkgdesc={pkg.pkgdesc}
 arch=({pkg.arch})
 url={pkg.url}
 license=({pkg.license})
-depends=(python {pkg.depends})
-makedepends=({pkg.makedepends})
-checkdepends=({pkg.checkdepends})
+depends=(python {pkg.depends:{pkg.__class__.__name__}})
+makedepends=({pkg.makedepends:{pkg.__class__.__name__}})
+checkdepends=({pkg.checkdepends:{pkg.__class__.__name__}})
 provides=()
 conflicts=()
 """
@@ -487,6 +487,9 @@ class PackageRef:
         # Dependencies should list the metapackage (which may be otherwise
         # unrelated) so that the metapackage can get updated into an official
         # package without breaking dependencies.
+        # However, the owning metapackage should list the dependencies
+        # explicitly, otherwise they are left hanging (other metapackages don't
+        # matter as they only depend on their own components).
         self.depname = (subpkg_of if subpkg_of is not None else self).pkgname
         self.arch_version = arch_version
         self.arch_packaged = arch_packaged
@@ -495,9 +498,13 @@ class PackageRef:
 
 class DependsList(list):
     def __format__(self, fmt):
-        if fmt == "":
+        # See above re: dependency type.
+        if fmt == "Package":
             return " ".join(_unique(ref.depname for ref in self))
-        return super().__format__(fmt)  # Raise TypeError.
+        elif fmt == "MetaPackage":
+            return " ".join(_unique(ref.pkgname for ref in self))
+        else:
+            return super().__format__(fmt)  # Raise TypeError.
 
 
 class _BasePackage(ABC):
