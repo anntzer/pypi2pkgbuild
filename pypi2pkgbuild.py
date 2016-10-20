@@ -114,6 +114,7 @@ arch=({pkg.arch})
 url={pkg.url}
 license=({pkg.license})
 depends=(python {pkg.depends:{pkg.__class__.__name__}})
+## EXTRA_DEPENDS ##
 makedepends=({pkg.makedepends:{pkg.__class__.__name__}})
 checkdepends=({pkg.checkdepends:{pkg.__class__.__name__}})
 provides=()
@@ -143,7 +144,6 @@ md5sums+=({md5s})
 """
 
 PKGBUILD_CONTENTS = """\
-## EXTRA_DEPENDS ##
 provides+=($(if [[ ${source[0]} =~ ^git+ ]]; then echo "$pkgname" | sed 's/-git$//'; fi))
 conflicts+=($(if [[ ${source[0]} =~ ^git+ ]]; then echo "$pkgname" | sed 's/-git$//'; fi))
 
@@ -413,7 +413,7 @@ def _get_site_packages_location():
 
 def _find_installed(pypi_name):
     parts = _run_shell(
-        # Ignore case due e.g. to "cycler" (pip) / "Cycler" (PyPI).
+        # Ignore case due e.g. to `cycler` (pip) / `Cycler` (PyPI).
         # {dist,egg}-info; don't be confused e.g. by pytest-cov.pth.
         "(shopt -s nocaseglob; pacman -Qo {}/{}-*-info) "
         "| rev | cut -d' ' -f1,2 | rev".format(
@@ -559,7 +559,8 @@ class _BasePackage(ABC):
         pkgbuild_contents = pkgbuild_contents.replace(
             "## EXTRA_DEPENDS ##",
             "depends+=({})".format(" ".join(extra_deps)))
-        # Unexpected archs.
+        # Unexpected arch-dependent package (e.g. direct compilation of C
+        # source).
         any_arch_re = "E: ELF file .* found in an 'any' package."
         if any(re.search(any_arch_re, line) for line in namcap):
             pkgbuild_contents = pkgbuild_contents.replace(
@@ -708,11 +709,9 @@ class Package(_BasePackage):
                     and list(self._get_srctree().glob("**/*.pyx"))):
                 self._arch = ["i686", "x86_64"]
                 self._makedepends.append(PackageRef("Cython"))
-            if not "any" in archs and list(self._get_srctree().glob("**/*.c")):
-                # Don't bother checking for the presence of C sources if
-                # there's an "any" wheel available; e.g. pexpect has a C source
-                # in its *tests*.
-                self._arch = ["i686", "x86_64"]
+            # If there are just C sources to be compiled (e.g. `xxhash`, `arch`
+            # will be fixed via namcap (because we can't be sure whether we are
+            # going to compile them, e.g. for `pycparser`).
 
     def _find_depends(self, metadata):
         return DependsList(map(PackageRef, metadata["requires"]))

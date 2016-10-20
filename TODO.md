@@ -10,7 +10,9 @@ Issues
 
 - `git` packages are cloned twice; we may be able to cache them.
 
-- Meta packages are fully rebuilt even if only a component needs to be built.
+- Meta packages are fully rebuilt even if only a component needs to be built
+  (although version dependencies -- in particular `pkgrel`s -- may have changed
+  so it may not be possible to avoid this and maintain robustness).
 
 - `scipy` fails to build, probably due to numpy/numpy#7779 (`LDFLAGS` set by
   `makepkg` strips defaults).  Setting `LDFLAGS` to `"$(. /etc/makepkg.conf;
@@ -22,12 +24,13 @@ Arch packaging
 - Some packages are not installed as wheels (e.g. PyQt5) and thus not seen by
   `pip list --outdated` (and thus `pypi2pkgbuild.py -o`).
 
-Remaining manual packages
-=========================
+Other incorrect packages
+========================
 
 - Undeclared dependencies:
     - `hmmlearn`
     - `nitime` (still uses `distutils`...)
+    - `sphinx-gallery` (could fetch `requirements.txt` from Github)
     - `supersmoother`
 
 - `ctypes`-loaded binary dependencies.
