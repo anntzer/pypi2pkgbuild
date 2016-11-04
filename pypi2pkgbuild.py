@@ -901,9 +901,12 @@ def find_outdated():
     syswide_location = (
         "{0.prefix}/lib/python{0.version_info.major}.{0.version_info.minor}"
         "/site-packages".format(sys))
-    # `pip show` is rather slow, so just call it once.
-    lines = _run_shell("pip list --outdated", stdout=PIPE).stdout.splitlines()
+    # Skip the `--format` warning (when the default changes, switch to
+    # supporting only pip 9 instead).
+    lines = (_run_shell("pip list --outdated", stdout=PIPE, stderr=DEVNULL)
+             .stdout.splitlines())
     names = [line.split()[0] for line in lines]
+    # `pip show` is rather slow, so just call it once.
     locs = _run_shell("pip show {} | grep -Po '(?<=^Location: ).*'".
                       format(" ".join(names)), stdout=PIPE).stdout.splitlines()
     owners = {}
@@ -913,9 +916,11 @@ def find_outdated():
             # Check that pypi's version is indeed newer.  Some packages
             # mis-report their version to pip (e.g., slicerator 0.9.7's Github
             # release).
-            # FIXME(?) Emit a warning?  How does this behave on metapackages?
             *_, pypi_ver, pypi_type = line.split()
             if arch_version.pkgver == pypi_ver:
+                LOGGER.warning(
+                    "pip thinks that %s is outdated, but it is actually at "
+                    "version %s and up-to-date.", name, pypi_ver)
                 continue
             owners.setdefault("{} {}".format(pkgname, arch_version),
                               []).append(line)
