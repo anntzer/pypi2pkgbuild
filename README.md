@@ -95,8 +95,7 @@ You can even run PyPI2PKGBUILD on itself to create a proper Arch package
 Configuration
 -------------
 
-Defaults arguments can be passed via the `PYPI2PHGBUILD_ARGS` environment
-variable, e.g.
+It is suggested to create an alias with standard options set, e.g.
 ```
-    $ export PYPI2PKGBUILD_ARGS='-b /path/to/pkgbuilds -f'
+    alias pypi2pkgbuild.py='PKGEXT=.pkg.tar pypi2pkgbuild.py -g cython -b /tmp/pypi2pkgbuild/ -f'
 ```

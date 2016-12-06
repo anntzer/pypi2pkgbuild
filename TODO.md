@@ -1,6 +1,8 @@
 Issues
 ======
 
+- Installation of specific git commit.
+
 - PyPI packages that depends on another package's `extra_requires` are not
   supported (needs upstream support from `pip show`).
     - `scikit-image` depends on `dask[array]`.
@@ -8,7 +10,7 @@ Issues
 - License support is incomplete.
     - e.g. `matplotlib` has a `LICENSE` *folder*.
 
-- `git` packages are cloned twice; we may be able to cache them.
+- git packages are cloned twice; we may be able to cache them.
 
 - Meta packages are fully rebuilt even if only a component needs to be built
   (although version dependencies -- in particular `pkgrel`s -- may have changed

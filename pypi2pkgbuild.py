@@ -14,7 +14,6 @@ from io import StringIO
 from itertools import repeat
 import json
 import logging
-import os
 from pathlib import Path
 import re
 import shlex
@@ -937,8 +936,6 @@ Options = namedtuple(
                "skipdeps makepkg is_dep")
 _description = """\
 Create a PKGBUILD for a PyPI package and run makepkg.
-
-Default arguments can be set in the PYPI2PKGBUILD_ARGS environment variable.
 """
 def main():
     try:
@@ -965,7 +962,7 @@ def main():
         help="Find outdated packages.")
     parser.add_argument(
         "-u", "--update-outdated", metavar="SKIP", nargs="*",
-        help="Find and build outdated packages; pass a list of (exact) PyPI"
+        help="Find and build outdated packages; pass a list of (exact) PyPI "
              "names to *skip*.")
     parser.add_argument(
         "-b", "--base-path", type=Path, default=Path(),
@@ -997,12 +994,7 @@ def main():
         "-m", "--makepkg", metavar="MAKEPKG_OPTS",
         default="--cleanbuild --nodeps",
         help="Additional arguments to pass to makepkg.")
-    env_args = eval(  # Parse the environment variable arguments.
-        _run_shell(
-            "{} -c 'import sys; print(sys.argv[1:])' {}".format(
-                sys.executable, os.environ.get("PYPI2PKGBUILD_ARGS", "")),
-            stdout=PIPE).stdout)
-    args = parser.parse_args(env_args + sys.argv[1:])
+    args = parser.parse_args()
     logging.basicConfig(level="DEBUG" if vars(args).pop("debug") else "INFO")
 
     outdated, update_outdated = map(
