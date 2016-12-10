@@ -143,15 +143,17 @@ md5sums+=({md5s})
 """
 
 PKGBUILD_CONTENTS = """\
-provides+=($(if [[ ${source[0]} =~ ^git+ ]]; then echo "$pkgname" | sed 's/-git$//'; fi))
-conflicts+=($(if [[ ${source[0]} =~ ^git+ ]]; then echo "$pkgname" | sed 's/-git$//'; fi))
+if [[ ${source[0]} =~ ^git+ ]]; then
+    provides+=("${pkgname%-git}")
+    conflicts+=("${pkgname%-git}")
+fi
 
 export PIP_CONFIG_FILE=/dev/null
 export PIP_DISABLE_PIP_VERSION_CHECK=true
 
 _first_source() {
-    all_sources=("${source_i686[@]}" "${source_x86_64[@]}" "${source[@]}")
-    echo ${all_sources[0]}
+    local all_sources=("${source_i686[@]}" "${source_x86_64[@]}" "${source[@]}")
+    printf "%s" "${all_sources[0]}"
 }
 
 _is_wheel() {
@@ -159,23 +161,8 @@ _is_wheel() {
 }
 
 _dist_name() {
-    dist_name="$(_first_source)"
-    for suffix in """ + " ".join(SDIST_SUFFIXES) + """ .git; do
-        dist_name="$(basename -s "$suffix" "$dist_name")"
-    done
-    echo "$dist_name"
-}
-
-_license_filename() {
-    # See Arch Wiki/PKGBUILD/license.
-    if [[ ${license[0]} =~ ^(BSD|MIT|ZLIB|Python)$ ]]; then
-        for test_name in """ + " ".join(LICENSE_NAMES) + """; do
-            if [[ -e $srcdir/$(_dist_name)/$test_name ]]; then
-                echo "$srcdir/$(_dist_name)/$test_name"
-                return
-            fi
-        done
-    fi
+    basename "$(_first_source)" |
+      sed 's/\\(""" + re.escape("|".join(SDIST_SUFFIXES)) + """\\)$//'
 }
 
 if [[ $(_first_source) =~ ^git+ ]]; then
@@ -192,12 +179,19 @@ fi
 build() {
     if _is_wheel; then return; fi
     cd "$srcdir/$(_dist_name)"
-    if ! pip wheel -v --no-deps --wheel-dir="$srcdir" \\
-        --global-option=build --global-option=-j$(nproc) .; then return; fi
-    license_filename=$(_license_filename)
-    if [[ $license_filename ]]; then
-        cp "$license_filename" "$srcdir/LICENSE"
+    # See Arch Wiki/PKGBUILD/license.
+    # Get the first filename that matches.
+    local test_name
+    if [[ ${license[0]} =~ ^(BSD|MIT|ZLIB|Python)$ ]]; then
+        for test_name in """ + " ".join(LICENSE_NAMES) + """; do
+            if cp "$srcdir/$(_dist_name)/$test_name" "$srcdir/LICENSE" 2>/dev/null; then
+                break
+            fi
+        done
     fi
+    # Build the wheel (which can fail) only after fetching the license.
+    if ! pip wheel -v --no-deps --wheel-dir="$srcdir" \\
+        --global-option=build --global-option=-j"$(nproc)" .; then return; fi
 }
 
 check() {
@@ -213,7 +207,7 @@ package() {
     cd "$srcdir"
     # pypa/pip#3063: pip always checks for a globally installed version.
     pip --quiet install --root="$pkgdir" --no-deps --ignore-installed \\
-        "$(if ls *.whl >/dev/null 2>&1; then echo *.whl; else echo ./$(_dist_name); fi)"
+        "$(ls ./*.whl 2>/dev/null || echo ./"$(_dist_name)")"
     if [[ -f LICENSE ]]; then
         install -D -m644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     fi
@@ -880,7 +874,7 @@ def dispatch_package_builder(name, config, options):
 def get_config():
     with TemporaryDirectory() as tmpdir:
         mini_pkgbuild = ('pkgver=0\npkgrel=0\narch=(any)\n'
-                         'prepare() { echo "$PACKAGER"; exit 0; }')
+                         'prepare() { printf "%s\n" "$PACKAGER"; exit 0; }')
         Path(tmpdir, "PKGBUILD").write_text(mini_pkgbuild)
         maintainer = (
             _run_shell("makepkg", cwd=tmpdir, stdout=PIPE, stderr=PIPE)
