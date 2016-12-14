@@ -24,6 +24,7 @@ import sys
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 import urllib.request
 
+from pip.vcs import VersionControl
 from pkg_resources.extern.packaging.version import parse as version_parse
 
 
@@ -362,14 +363,20 @@ def _get_metadata(name, makedepends_cython):
 @lru_cache()
 def _get_pypi_info(name, *, pre=False, _version=""):
     if name.startswith("git+"):
+        url, rev = VersionControl(name).get_url_rev()
+        if rev:
+            # FIXME pip guesses whether a name is a branch, a commit or a tag,
+            # whereas the fragment type must be specified in the PKGBUILD.
+            raise PackagingError(
+                "No support for packaging specific revisions.")
         metadata = _get_metadata(name, True)
         try:  # Normalize the name if available on PyPI.
             metadata["name"] = _get_pypi_info(metadata["name"])["info"]["name"]
         except PackagingError:
             pass
-        return {"info": {"download_url": name[4:],  # Strip "git+".
-                         "home_page": name[4:],
-                         "package_url": name[4:],
+        return {"info": {"download_url": url,
+                         "home_page": url,
+                         "package_url": url,
                          **metadata},
                 "urls": [{"packagetype": "sdist",
                           "path": urllib.parse.urlparse(name).path,
@@ -1009,6 +1016,7 @@ def main():
                 create_package(name, Options(**vars(args), is_dep=False))
             except PackagingError as exc:
                 LOGGER.error("%s", exc)
+                return 1
 
     else:
         if not args.name:
@@ -1017,7 +1025,7 @@ def main():
             create_package(vars(args).pop("name"),
                            Options(**vars(args), is_dep=False))
         except PackagingError as exc:
-            LOGGER.exception("")
+            LOGGER.error("%s", exc)
             return 1
 
     cmd = ""

@@ -1,7 +1,7 @@
 Issues
 ======
 
-- Installation of specific git commit.
+- VCS fragments cannot be given.
 
 - PyPI packages that depends on another package's `extra_requires` are not
   supported (needs upstream support from `pip show`).
@@ -28,6 +28,9 @@ Arch packaging
 
 Other incorrect packages
 ========================
+
+- Setup-time dependencies:
+    - `pomegranate`’s cython files depend on scipy's BLAS `pxd`s.
 
 - Undeclared dependencies:
     - `hmmlearn`

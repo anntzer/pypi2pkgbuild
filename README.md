@@ -92,10 +92,15 @@ Installation
 You can even run PyPI2PKGBUILD on itself to create a proper Arch package
 (`pypi2pkgbuild.py git+https://github.com/anntzer/pypi2pkgbuild`)...
 
-Configuration
--------------
+Notes
+-----
 
-It is suggested to create an alias with standard options set, e.g.
+- It is suggested to create an alias with standard options set, e.g.
 ```
     alias pypi2pkgbuild.py='PKGEXT=.pkg.tar pypi2pkgbuild.py -g cython -b /tmp/pypi2pkgbuild/ -f'
 ```
+
+- Packaging `git` packages currently requires cloning the package twice as pip
+  [does not cache the repository](https://github.com/pypa/pip/issues/218).
+  To save bandwidth, one can first locally clone the repository, then run
+  `pypi2pkgbuild.py file://$PATH_TO_LOCAL_CLONE`.
