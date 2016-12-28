@@ -1,8 +1,23 @@
 PyPI2PKGBUILD
 =============
 
-Convert PyPI entries to Arch Linux packages, inspired from
+Convert PyPI packages to Arch Linux packages, inspired from
 [pip2arch](https://github.com/bluepeppers/pip2arch).
+
+Dependencies and installation
+-----------------------------
+
+`pypi2pkgbuild.py` depends on the Arch Linux packages `pkgfile` and
+`python-pip`.
+
+The script can be installed with `pip install [--user] .`, or can also be run
+directly.
+
+One can even run PyPI2PKGBUILD on itself to create a proper Arch package
+(`pypi2pkgbuild.py git+https://github.com/anntzer/pypi2pkgbuild`).
+
+Usage
+-----
 
 `pypi2pkgbuild.py PYPINAME` creates a PKGBUILD (in a git repo) for the latest
 version of the given PyPI package (including prereleases if the `--pre` flag is
@@ -40,7 +55,11 @@ Improvements over pip2arch
   applicable.
 - Automatically builds the package (with options given in `--makepkg=...`) and
   run `namcap`.
-- Automatically builds all outdated dependencies via `-O`.
+- Automatically builds all outdated dependencies via `-u`.
+
+Another tool for converting PyPI packages to Arch Linux packages is the generic
+converter [fpm](https://github.com/jordansissel/fpm); however, it seems to be
+incompatible with recent `pip`s.
 
 Build-time dependencies
 -----------------------
@@ -76,21 +95,6 @@ easily install everything by `cd`'ing there and running
     $ sudo pacman -U --asdeps **/*.xz
     $ sudo pacman -D --asexplicit $pkgname/$pkgname.tar.xz
 ```
-
-Dependencies
-------------
-
-- Python 3.5+
-- `pkgfile` (to check which dependencies are already available as official
-  packages)
-
-Installation
-------------
-
-`pip install .`, or just run the script directly.
-
-You can even run PyPI2PKGBUILD on itself to create a proper Arch package
-(`pypi2pkgbuild.py git+https://github.com/anntzer/pypi2pkgbuild`)...
 
 Notes
 -----

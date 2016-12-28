@@ -10,8 +10,6 @@ Issues
 - License support is incomplete.
     - e.g. `matplotlib` has a `LICENSE` *folder*.
 
-- git packages are cloned twice; we may be able to cache them.
-
 - Meta packages are fully rebuilt even if only a component needs to be built
   (although version dependencies -- in particular `pkgrel`s -- may have changed
   so it may not be possible to avoid this and maintain robustness).
@@ -19,6 +17,10 @@ Issues
 - `scipy` fails to build, probably due to numpy/numpy#7779 (`LDFLAGS` set by
   `makepkg` strips defaults).  Setting `LDFLAGS` to `"$(. /etc/makepkg.conf;
   echo $LDFLAGS) -shared"` does not seem to help, though.
+
+- `fpm` adds a `get_metadata` command to avoid having to install the package
+  but this can't be done with e.g. wheels.  Perhaps we could hook something
+  else?
 
 Arch packaging
 ==============
