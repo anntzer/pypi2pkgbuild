@@ -25,8 +25,9 @@ Issues
 Arch packaging
 ==============
 
-- Some packages are not installed as wheels (e.g. PyQt5) and thus not seen by
-  `pip list --outdated` (and thus `pypi2pkgbuild.py -o`).
+- Some packages are installed without an `.egg-info` (e.g. `entrypoints`,
+  `PyQt5`) and thus not seen by `pip list --outdated` (and thus
+  `pypi2pkgbuild.py -o`).
 
 Other incorrect packages
 ========================

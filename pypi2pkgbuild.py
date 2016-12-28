@@ -19,7 +19,7 @@ import re
 import shlex
 import shutil
 import subprocess
-from subprocess import CalledProcessError, DEVNULL, PIPE
+from subprocess import CalledProcessError, PIPE
 import sys
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 import urllib.request
@@ -292,6 +292,10 @@ class WheelInfo(
         return cls(name, version, build, python, abi, platform)
 
 
+def to_wheel_name(pypi_name):
+    return pypi_name.replace("-", "_")
+
+
 class PackagingError(Exception):
     pass
 
@@ -411,25 +415,51 @@ def _get_site_packages_location():
         "/site-packages".format(sys))
 
 
-def _find_installed(pypi_name):
-    parts = _run_shell(
-        # Ignore case due e.g. to `cycler` (pip) / `Cycler` (PyPI).
-        # {dist,egg}-info; don't be confused e.g. by pytest-cov.pth.
-        "(shopt -s nocaseglob; pacman -Qo {}/{}-*-info) "
-        "| rev | cut -d' ' -f1,2 | rev".format(
-            _get_site_packages_location(), pypi_name.replace("-", "_")),
-        stdout=PIPE, stderr=DEVNULL).stdout[:-1].split()
-    if len(parts) == 0:
-        return
-    else:
-        # Raise if there is an ambiguity.
-        pkgname, version = parts
+# For _find_installed and _find_official:
+#   - first check for a matching `.{dist,egg}-info` file, ignoring case to
+#     handle e.g. `cycler` (pip) / `Cycler` (PyPI).
+#   - then check exact lowercase matches, to handle packages without a
+#     `.{dist,egg}-info`.
+
+
+def _find_installed(pypi_name, *, ignore_vendored=False):
+    parts = (
+        _run_shell(
+            "(shopt -s nocaseglob; pacman -Qo {}/{}-*-info 2>/dev/null) "
+            "| rev | cut -d' ' -f1,2 | rev".format(
+                _get_site_packages_location(), pypi_name.replace("-", "_")),
+            stdout=PIPE).stdout[:-1].split()
+        or _run_shell(
+            "pacman -Q python-{} 2>/dev/null".format(pypi_name.lower()),
+            stdout=PIPE, check=False).stdout[:-1].split())
+    if parts:
+        pkgname, version = parts  # This will raise if there is an ambiguity.
         if (pkgname.endswith("-git")
-                and _run_shell("pacman -Qi {} | grep 'Conflicts With *: {}$'"
-                               .format(pkgname, pkgname[:-len("-git")]),
-                               stdout=DEVNULL)):
+                and _run_shell(
+                    "pacman -Qi {} 2>/dev/null | grep 'Conflicts With *: {}$'"
+                        .format(pkgname, pkgname[:-len("-git")]),
+                    check=False).returncode == 0):
             pkgname = pkgname[:-len("-git")]
-        return pkgname, ArchVersion.parse(version)
+        if ignore_vendored and pkgname.startswith("python--"):
+            return
+        else:
+            return pkgname, ArchVersion.parse(version)
+    else:
+        return
+
+
+def _find_official(pypi_name):
+    parts = _run_shell(
+        r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
+        "| cut -f1 | uniq | cut -d/ -f2".format(
+            to_wheel_name(pypi_name), sys.version_info),
+        stdout=PIPE).stdout[:-1].split()
+    if parts:
+        pkgname, version = parts
+        arch_version = ArchVersion.parse(version)
+        return pkgname, arch_version
+    else:
+        return
 
 
 class NonPyPackageRef:
@@ -444,46 +474,30 @@ class PackageRef:
         self.orig_name = name  # A name or an URL.
         self.info = _get_pypi_info(name, pre=pre)
         self.pypi_name = self.info["info"]["name"] # Name on PyPI.
-        self.wheel_name = self.pypi_name.replace("-", "_") # Name for wheels.
-        # Default values; we'll check if the package already exists.
-        # Name for Arch Linux.
-        pkgname = "python-{}{}{}".format("-" if subpkg_of else "",
-                                         self.pypi_name.lower(),
-                                         self.info["_pkgname_suffix"])
-        arch_version = None
-        arch_packaged = []
-        exists = False
-        if not subpkg_of:
-            # First check the official packages: we may have installed locally
-            # `python--ipython` but we want to update starting from `ipython`
-            # again.
-            # Then check the installed packages: they may have inherited
-            # non-standard names from AUR (e.g. `pipdeptree`).
-            try:
-                # See `_find_installed` re: case.
-                pkgname, version = _run_shell(
-                    r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
-                    "| cut -f1 | uniq | cut -d/ -f2".format(
-                        self.wheel_name, sys.version_info),
-                    stdout=PIPE).stdout[:-1].split()
-                pkgname += self.info["_pkgname_suffix"]
-                arch_version = ArchVersion.parse(version)
-                exists = True
-            except ValueError:  # No output from `pkgfile`.
-                try:
-                    pkgname, arch_version = _find_installed(self.pypi_name)
-                    pkgname += self.info["_pkgname_suffix"]
-                    exists = True
-                except TypeError:  # `_find_installed` returned None.
-                    pass
-        if exists:
-            arch_packaged = _run_shell(
-                "pkgfile -l {} "
-                r"| grep -Po '(?<=site-packages/)[^-]*(?=.*\.egg-info/?$)'".
-                format(pkgname), stdout=PIPE, check=False).stdout.splitlines()
+
+        if subpkg_of:
+            pkgname = "python--{}".format(self.pypi_name.lower())
+            arch_version = None
+
+        else:
+            # First, check installed packages, which may have inherited
+            # non-standard names from the AUR (e.g., `python-numpy-openblas`,
+            # `pipdeptree`).  Specifically ignore vendored packages
+            # (`python--*`).  Then, check official packages.  Then, fallback on
+            # the default.
+
+            pkgname, arch_version = (
+                _find_installed(self.pypi_name, ignore_vendored=True)
+                or _find_official(self.pypi_name)
+                or ("python-{}".format(self.pypi_name.lower()), None))
+
+        arch_packaged = _run_shell(
+            "pkgfile -l {} 2>/dev/null"
+            r"| grep -Po '(?<=site-packages/)[^-]*(?=.*\.egg-info/?$)'".
+            format(pkgname), stdout=PIPE, check=False).stdout.splitlines()
 
         # Final values.
-        self.pkgname = pkgname
+        self.pkgname = pkgname + self.info["_pkgname_suffix"]
         # Dependencies should list the metapackage (which may be otherwise
         # unrelated) so that the metapackage can get updated into an official
         # package without breaking dependencies.
@@ -493,7 +507,7 @@ class PackageRef:
         self.depname = (subpkg_of if subpkg_of is not None else self).pkgname
         self.arch_version = arch_version
         self.arch_packaged = arch_packaged
-        self.exists = exists
+        self.exists = arch_version is not None
 
 
 class DependsList(list):
@@ -530,7 +544,7 @@ class _BasePackage(ABC):
         cmd = ["makepkg",
                *(["--force"] if options.force else []),
                *shlex.split(options.makepkg)]
-        _subprocess_run(cmd, check=True, cwd=str(cwd))
+        _subprocess_run(cmd, cwd=str(cwd))
 
         def _get_fullname():
             # Only one of the archs will be globbed successfully.
@@ -661,7 +675,7 @@ class Package(_BasePackage):
                 else:
                     # PyPI currently allows uploading of packages with local
                     # version identifiers, see pypa/pypi-legacy#486.
-                    if (wheel_info.name != self._ref.wheel_name
+                    if (wheel_info.name != to_wheel_name(self._ref.pypi_name)
                             or wheel_info.version
                                != self._ref.info["info"]["version"]):
                         LOGGER.warning("Unexpected wheel info: %s", wheel_info)
@@ -903,7 +917,7 @@ def find_outdated():
         "/site-packages".format(sys))
     # Skip the `--format` warning (when the default changes, switch to
     # supporting only pip 9 instead).
-    lines = (_run_shell("pip list --outdated", stdout=PIPE, stderr=DEVNULL)
+    lines = (_run_shell("pip list --outdated 2>/dev/null", stdout=PIPE)
              .stdout.splitlines())
     names = [line.split()[0] for line in lines]
     # `pip show` is rather slow, so just call it once.
@@ -940,7 +954,7 @@ Create a PKGBUILD for a PyPI package and run makepkg.
 """
 def main():
     try:
-        _run_shell("pkgfile pkgfile", stdout=DEVNULL)
+        _run_shell("pkgfile pkgfile >/dev/null")
     except CalledProcessError:
         # Display one of:
         #   - "/bin/sh: pkgfile: command not found"
