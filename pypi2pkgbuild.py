@@ -393,16 +393,20 @@ def _get_pypi_info(name, *, pre=False, _version=""):
                 "https://pypi.python.org/pypi/{}/{}/json"
                 .format(name, _version))
         except urllib.error.HTTPError:
-            raise PackagingError("Package {!r} not found.".format(name))
+            raise PackagingError(
+                "Package {} {} not found.".format(name, _version))
         # Load as OrderedDict so that always the same sdist is chosen if e.g.
         # both zip and tgz are available.
         request = json.loads(r.read().decode(r.headers.get_param("charset")),
                              object_pairs_hook=OrderedDict)
         if not _version:
-            versions = [version_parse(release)
-                        for release in request["releases"]]
-            max_version = str(max(version for version in versions
-                                  if not (not pre and version.is_prerelease)))
+            versions = [
+                version for version in
+                (version_parse(release) for release in request["releases"])
+                if not (not pre and version.is_prerelease)]
+            if not versions:
+                raise PackagingError("No suitable release found.")
+            max_version = str(max(version for version in versions))
             if max_version != request["info"]["version"]:
                 return _get_pypi_info(name, pre=pre, _version=max_version)
         request["_pkgname_suffix"] = ""
