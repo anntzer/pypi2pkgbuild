@@ -117,8 +117,8 @@ depends=(python {pkg.depends:{pkg.__class__.__name__}})
 ## EXTRA_DEPENDS ##
 makedepends=({pkg.makedepends:{pkg.__class__.__name__}})
 checkdepends=({pkg.checkdepends:{pkg.__class__.__name__}})
-provides=()
-conflicts=()
+provides=({pkg.provides})
+conflicts=("${{provides%=*}}")
 """
 
 SDIST_SOURCE = """\
@@ -419,14 +419,14 @@ def _get_site_packages_location():
         "/site-packages".format(sys))
 
 
-# For _find_installed and _find_official:
+# For _find_{installed,arch}_name_version:
 #   - first check for a matching `.{dist,egg}-info` file, ignoring case to
 #     handle e.g. `cycler` (pip) / `Cycler` (PyPI).
 #   - then check exact lowercase matches, to handle packages without a
 #     `.{dist,egg}-info`.
 
 
-def _find_installed(pypi_name, *, ignore_vendored=False):
+def _find_installed_name_version(pypi_name, *, ignore_vendored=False):
     parts = (
         _run_shell(
             "(shopt -s nocaseglob; pacman -Qo {}/{}-*-info 2>/dev/null) "
@@ -452,7 +452,7 @@ def _find_installed(pypi_name, *, ignore_vendored=False):
         return
 
 
-def _find_official(pypi_name):
+def _find_arch_name_version(pypi_name):
     parts = _run_shell(
         r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
         "| cut -f1 | uniq | cut -d/ -f2".format(
@@ -491,8 +491,9 @@ class PackageRef:
             # the default.
 
             pkgname, arch_version = (
-                _find_installed(self.pypi_name, ignore_vendored=True)
-                or _find_official(self.pypi_name)
+                _find_installed_name_version(self.pypi_name,
+                                             ignore_vendored=True)
+                or _find_arch_name_version(self.pypi_name)
                 or ("python-{}".format(self.pypi_name.lower()), None))
 
         arch_packaged = _run_shell(
@@ -823,6 +824,20 @@ class Package(_BasePackage):
     checkdepends = property(
         lambda self: DependsList())
 
+    @property
+    def provides(self):
+        # Packages should provide their official alias (e.g. for dependents of
+        # `python-numpy-openblas`)... except for vendored packages (so that
+        # `python--pillow` doesn't provide `python-pillow`).
+        if self._ref.pkgname.startswith("python--"):
+            return ""
+        try:
+            name, version = _find_arch_name_version(self._ref.pypi_name)
+        except TypeError:  # name, version = None
+            return ""
+        else:
+            return "{}={}".format(name, self.pkgver)
+
     def write_deps_to(self, options):
         for ref in self._depends:
             if not ref.exists:
@@ -872,6 +887,8 @@ class MetaPackage(_BasePackage):
         lambda self: DependsList())
     checkdepends = property(
         lambda self: DependsList())
+    provides = property(
+        lambda self: "")
 
     def _get_target_path(self, base_path):
         return base_path / ("meta:" + self._ref.pkgname)
@@ -930,7 +947,7 @@ def find_outdated():
     owners = {}
     for line, name, loc in zip(lines, names, locs):
         if loc == syswide_location:
-            pkgname, arch_version = _find_installed(name)
+            pkgname, arch_version = _find_installed_name_version(name)
             # Check that pypi's version is indeed newer.  Some packages
             # mis-report their version to pip (e.g., slicerator 0.9.7's Github
             # release).
