@@ -997,8 +997,8 @@ def main():
         formatter_class=type("", (RawDescriptionHelpFormatter,
                                   ArgumentDefaultsHelpFormatter), {}))
     parser.add_argument(
-        "name", nargs="?",
-        help="The PyPI package name.")
+        "names", metavar="name", nargs="*",
+        help="The PyPI package names.")
     parser.add_argument(
         "-d", "--debug", action="store_true", default=False,
         help="Log at DEBUG level.")
@@ -1046,12 +1046,13 @@ def main():
         vars(args).pop, ["outdated", "update_outdated"])
 
     if outdated:
-        if vars(args).pop("name", None):
+        if vars(args).pop("names"):
             parser.error("--outdated should be given with no name.")
         find_outdated()
 
     elif update_outdated is not None:
-        vars(args).pop("name")  # Should be None anyways.
+        if vars(args).pop("names"):
+            parser.error("--update-outdated should be given with no name.")
         for line in sum(find_outdated().values(), []):
             name, *_ = line.split()
             if name in update_outdated:
@@ -1063,11 +1064,11 @@ def main():
                 return 1
 
     else:
-        if not args.name:
+        if not args.names:
             parser.error("the following arguments are required: name")
         try:
-            create_package(vars(args).pop("name"),
-                           Options(**vars(args), is_dep=False))
+            for name in vars(args).pop("names"):
+                create_package(name, Options(**vars(args), is_dep=False))
         except PackagingError as exc:
             LOGGER.error("%s", exc)
             return 1
