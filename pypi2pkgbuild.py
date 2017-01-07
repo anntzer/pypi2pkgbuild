@@ -316,7 +316,7 @@ def _get_metadata(name, makedepends_cython):
             NamedTemporaryFile("r") as more_requires, \
             NamedTemporaryFile("r") as log:
         script = (r"""
-        pyvenv {venvdir}
+        python -mvenv {venvdir}
         . {venvdir}/bin/activate
         export PIP_CONFIG_FILE=/dev/null
         pip install --upgrade pip >/dev/null
@@ -942,7 +942,8 @@ def find_outdated():
              .stdout.splitlines())
     names = [line.split()[0] for line in lines]
     # `pip show` is rather slow, so just call it once.
-    locs = _run_shell("pip show {} | grep -Po '(?<=^Location: ).*'".
+    locs = _run_shell("pip show {} 2>/dev/null "  # Silence error if no names.
+                      "| grep -Po '(?<=^Location: ).*'".
                       format(" ".join(names)), stdout=PIPE).stdout.splitlines()
     owners = {}
     for line, name, loc in zip(lines, names, locs):
