@@ -481,20 +481,26 @@ class PackageRef:
 
         if subpkg_of:
             pkgname = "python--{}".format(self.pypi_name.lower())
+            depname = subpkg_of.pkgname
             arch_version = None
 
         else:
-            # First, check installed packages, which may have inherited
-            # non-standard names from the AUR (e.g., `python-numpy-openblas`,
-            # `pipdeptree`).  Specifically ignore vendored packages
-            # (`python--*`).  Then, check official packages.  Then, fallback on
-            # the default.
+            # For the name as package:  First, check installed packages,
+            # which may have inherited non-standard names from the AUR (e.g.,
+            # `python-numpy-openblas`, `pipdeptree`).  Specifically ignore
+            # vendored packages (`python--*`).  Then, check official packages.
+            # Then, fallback on the default.
+            # For the name as dependency, try the official name first, so that
+            # one can replace the local package (which provides the official
+            # one anyways) by the official one if desired without breaking
+            # dependencies.
 
-            pkgname, arch_version = (
-                _find_installed_name_version(self.pypi_name,
-                                             ignore_vendored=True)
-                or _find_arch_name_version(self.pypi_name)
-                or ("python-{}".format(self.pypi_name.lower()), None))
+            installed = _find_installed_name_version(
+                self.pypi_name, ignore_vendored=True)
+            arch = _find_arch_name_version(self.pypi_name)
+            default = "python-{}".format(self.pypi_name.lower()), None
+            pkgname, arch_version = installed or arch or default
+            depname, _ = arch or installed or default
 
         arch_packaged = _run_shell(
             "pkgfile -l {} 2>/dev/null"
@@ -503,13 +509,15 @@ class PackageRef:
 
         # Final values.
         self.pkgname = pkgname + self.info["_pkgname_suffix"]
-        # Dependencies should list the metapackage (which may be otherwise
-        # unrelated) so that the metapackage can get updated into an official
-        # package without breaking dependencies.
-        # However, the owning metapackage should list the dependencies
-        # explicitly, otherwise they are left hanging (other metapackages don't
-        # matter as they only depend on their own components).
-        self.depname = (subpkg_of if subpkg_of is not None else self).pkgname
+        # Packages that depend on a vendored package should list the
+        # metapackage (which may be otherwise unrelated) as a dependency, so
+        # that the metapackage can get updated into an official package without
+        # breaking dependencies.
+        # However, the owning metapackage should list their vendorees
+        # explicitly, so that they do not end up unrequired (other metapackages
+        # don't matter as they only depend on their own components).
+        # This logic is implemented in `DependsList.__fmt__`.
+        self.depname = depname
         self.arch_version = arch_version
         self.arch_packaged = arch_packaged
         self.exists = arch_version is not None
