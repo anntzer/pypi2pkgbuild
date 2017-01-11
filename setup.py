@@ -15,4 +15,5 @@ if __name__ == "__main__":
                        "License :: OSI Approved :: BSD License",
                        "Operating System :: POSIX :: Linux",
                        "Programming Language :: Python :: 3.5",
-                       "Topic :: System :: Software Distribution"])
+                       "Topic :: System :: Software Distribution"],
+          install_requires=["pip>=9"])
