@@ -153,8 +153,8 @@ export PIP_CONFIG_FILE=/dev/null
 export PIP_DISABLE_PIP_VERSION_CHECK=true
 
 _first_source() {
-    local all_sources=("${source_i686[@]}" "${source_x86_64[@]}" "${source[@]}")
-    printf "%s" "${all_sources[0]}"
+    local sources=("${source_i686[@]}" "${source_x86_64[@]}" "${source[@]}")
+    printf "%s" "${sources[0]}"
 }
 
 _is_wheel() {
@@ -172,7 +172,8 @@ if [[ $(_first_source) =~ ^git+ ]]; then
           cd "$srcdir/$(_dist_name)"
           git describe --long --tags 2>/dev/null |
             sed 's/^v//;s/\\([^-]*-g\\)/r\\1/;s/-/./g' ||
-          printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+          printf "r%s.%s" \\
+              "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
         )
     }
 fi
@@ -191,8 +192,9 @@ build() {
         done
     fi
     # Build the wheel (which can fail) only after fetching the license.
-    if ! pip wheel -v --no-deps --wheel-dir="$srcdir" \\
-        --global-option=build --global-option=-j"$(nproc)" .; then return; fi
+    pip wheel -v --no-deps --wheel-dir="$srcdir" \\
+        --global-option=build --global-option=-j"$(nproc)" . ||
+        true
 }
 
 check() {
@@ -605,8 +607,8 @@ class _BasePackage(ABC):
             "| grep -v \"W: "
                 r"\(Dependency included and not needed"
                 r"\|Unused shared library '/usr/lib/libpthread\.so\.0'\)"
-            "\" "
-            "|| true".format(fullname.name),
+            "\" || "
+            "true".format(fullname.name),
             cwd=cwd)
         _run_shell("namcap PKGBUILD", cwd=cwd)
         _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
@@ -623,7 +625,7 @@ class Package(_BasePackage):
         stream = StringIO()
         self._srctree = None
 
-        LOGGER.info("Packaging %s %s",
+        LOGGER.info("Packaging %s %s.",
                     self.pkgname, ref.info["info"]["version"])
         self._urls = self._filter_and_sort_urls(ref.info["urls"],
                                                 options.pkgtypes)
@@ -762,7 +764,7 @@ class Package(_BasePackage):
         elif info["license"] not in [None, "UNKNOWN"]:
             licenses.append("custom:{}".format(info["license"]))
         else:
-            LOGGER.warning("No license information available")
+            LOGGER.warning("No license information available.")
             licenses.append("custom:unknown")
 
         _license_found = False
@@ -800,7 +802,7 @@ class Package(_BasePackage):
                     self._files.update(
                         LICENSE=("LICENSE: " + ", ".join(licenses) + "\n")
                                 .encode("ascii"))
-                    LOGGER.warning("Could not retrieve license file")
+                    LOGGER.warning("Could not retrieve license file.")
 
         return licenses
 
@@ -963,8 +965,8 @@ def find_outdated():
             *_, pypi_ver, pypi_type = line.split()
             if arch_version.pkgver == pypi_ver:
                 LOGGER.warning(
-                    "pip thinks that %s is outdated, but it is actually at "
-                    "version %s and up-to-date.", name, pypi_ver)
+                    "pip thinks that %s is outdated, but the installed "
+                    "version is actually %s, and up-to-date.", name, pypi_ver)
                 continue
             owners.setdefault("{} {}".format(pkgname, arch_version),
                               []).append(line)
