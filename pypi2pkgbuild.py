@@ -1024,14 +1024,14 @@ def main():
              "Set e.g. to 99 to override AUR packages.")
     parser.add_argument(
         "-g", "--guess-makedepends", metavar="MAKEDEPENDS",
-        default="cython:swig",
-        type=lambda s: tuple(s.split(":")),  # Keep it hashable.
-        help="`:`-separated list of makedepends that will be guessed.")
+        default="cython,swig",
+        type=lambda s: tuple(s.split(",")),  # Keep it hashable.
+        help="comma-separated list of makedepends that will be guessed.")
     parser.add_argument(
         "-t", "--pkgtypes",
-        default="anywheel:sdist:manylinuxwheel",
-        type=lambda s: tuple(s.split(":")),  # Keep it hashable.
-        help="`:`-separated preference order for dists.")
+        default="anywheel,sdist,manylinuxwheel",
+        type=lambda s: tuple(s.split(",")),  # Keep it hashable.
+        help="comma-separated preference order for dists.")
     parser.add_argument(
         "-s", "--skipdeps", action="store_true",
         help="Don't generate PKGBUILD for dependencies.")
