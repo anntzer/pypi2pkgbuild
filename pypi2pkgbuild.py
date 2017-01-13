@@ -981,15 +981,6 @@ _description = """\
 Create a PKGBUILD for a PyPI package and run makepkg.
 """
 def main():
-    try:
-        _run_shell("pkgfile pkgfile >/dev/null")
-    except CalledProcessError:
-        # Display one of:
-        #   - "/bin/sh: pkgfile: command not found"
-        #   - "error: No repo files found. Please run `pkgfile --update'."
-        # on stderr.
-        sys.exit(1)
-
     def _comma_separated_arg(s):
         return tuple(s.split(",")) if s else ()  # Keep it hashable.
 
@@ -1045,7 +1036,27 @@ def main():
         default="--cleanbuild --nodeps",
         help="Additional arguments to pass to makepkg.")
     args = parser.parse_args()
-    logging.basicConfig(level="DEBUG" if vars(args).pop("debug") else "INFO")
+    logging.basicConfig()
+    log_level = logging.DEBUG if vars(args).pop("debug") else logging.INFO
+    handler_level = logging.getLogger().handlers[0].level
+    @LOGGER.addFilter
+    def f(record):
+        # This hack allows us to run with COLOREDLOGS_AUTO_INSTALL=1 without
+        # having to set the root handler level to DEBUG (which would affect
+        # other packages as well).
+        if record.levelno >= log_level:
+            record.levelno = max(handler_level, record.levelno)
+        return True
+
+    try:
+        # This needs to happen after logging is configured.
+        _run_shell("pkgfile pkgfile >/dev/null")
+    except CalledProcessError:
+        # Display one of:
+        #   - "/bin/sh: pkgfile: command not found"
+        #   - "error: No repo files found. Please run `pkgfile --update'."
+        # on stderr.
+        sys.exit(1)
 
     outdated, update, ignore = map(
         vars(args).pop, ["outdated", "update", "ignore"])
