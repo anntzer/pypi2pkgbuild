@@ -29,18 +29,24 @@ Arch packaging
   `PyQt5`) and thus not seen by `pip list --outdated` (and thus
   `pypi2pkgbuild.py -o`).
 
-Other incorrect packages
-========================
+Mispackaged packages
+====================
+
+- `extras_requires` (see above):
+    - `scikit-image` (AUR package has similar issue.)
 
 - Setup-time dependencies:
-    - `pomegranate`’s cython files depend on scipy's BLAS `pxd`s.
+    - `pomegranate` (Cython files depend on scipy's BLAS `pxd`s.)
 
 - Undeclared dependencies:
     - `hmmlearn`
-    - `memory_profiler` ("strongly recommands" `psutil`)
-    - `nitime` (still uses `distutils`...)
-    - `sphinx-gallery` (could fetch `requirements.txt` from Github)
+    - `memory_profiler` ("Strongly recommands" `psutil`.)
+    - `nitime` (Still uses `distutils`...)
+    - `sphinx-gallery` (Could fetch `requirements.txt` from Github.)
     - `supersmoother`
 
-- `ctypes`-loaded binary dependencies.
-    - `yep`: depends on `gperftools`
+- `ctypes`-loaded binary dependencies:
+    - `yep` (Depends on `gperftools`.)
+
+- Wrappers for binaries:
+    - `graphviz`

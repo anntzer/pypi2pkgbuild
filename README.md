@@ -63,9 +63,11 @@ pacaur() {
     fi
 }
 ```
-(This function will not bypass Python packages explicitly installed from
-the AUR, as the user may have done so to bypass some incorrect packaging by
-`pypi2pkgbuild.py`.)
+This function will not bypass Python packages explicitly installed from
+the AUR, as the user may have done so to bypass some incorrect packaging
+by `pypi2pkgbuild.py`.  It is recommended to use the `-i` flag to calls to
+`pypi2pkgbuild.py` (e.g. in an alias) to exclude packages that are mishandled
+by `pypi2pkgbuild.py` (see [TODO.md](TODO.md#mispackaged-packages)).
 
 - Packaging `git` packages currently requires cloning the package twice as pip
   [does not cache the repository](https://github.com/pypa/pip/issues/218).

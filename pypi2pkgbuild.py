@@ -990,6 +990,9 @@ def main():
         # on stderr.
         sys.exit(1)
 
+    def _comma_separated_arg(s):
+        return tuple(s.split(",")) if s else ()  # Keep it hashable.
+
     parser = ArgumentParser(
         description=_description,
         formatter_class=type("", (RawDescriptionHelpFormatter,
@@ -1004,9 +1007,13 @@ def main():
         "-o", "--outdated", action="store_true", default=False,
         help="Find outdated packages.")
     parser.add_argument(
-        "-u", "--update-outdated", metavar="SKIP", nargs="*",
-        help="Find and build outdated packages; pass a list of (exact) PyPI "
-             "names to *skip*.")
+        "-u", "--update", action="store_true", default=False,
+        help="Find and build outdated packages.")
+    parser.add_argument(
+        "-i", "--ignore", metavar="NAME,...",
+        default="",
+        type=_comma_separated_arg,
+        help="Comma-separated list of packages not to be updated.")
     parser.add_argument(
         "-b", "--base-path", type=Path, default=Path(),
         help="Base path where the packages folders are created.")
@@ -1021,15 +1028,15 @@ def main():
         help="Force value of $pkgrel (not applicable to metapackages).  "
              "Set e.g. to 99 to override AUR packages.")
     parser.add_argument(
-        "-g", "--guess-makedepends", metavar="MAKEDEPENDS",
+        "-g", "--guess-makedepends", metavar="MAKEDEPENDS,...",
         default="cython,swig",
-        type=lambda s: tuple(s.split(",")),  # Keep it hashable.
-        help="comma-separated list of makedepends that will be guessed.")
+        type=_comma_separated_arg,
+        help="Comma-separated list of makedepends that will be guessed.")
     parser.add_argument(
         "-t", "--pkgtypes",
         default="anywheel,sdist,manylinuxwheel",
-        type=lambda s: tuple(s.split(",")),  # Keep it hashable.
-        help="comma-separated preference order for dists.")
+        type=_comma_separated_arg,
+        help="Comma-separated preference order for dists.")
     parser.add_argument(
         "-s", "--skipdeps", action="store_true",
         help="Don't generate PKGBUILD for dependencies.")
@@ -1040,21 +1047,23 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level="DEBUG" if vars(args).pop("debug") else "INFO")
 
-    outdated, update_outdated = map(
-        vars(args).pop, ["outdated", "update_outdated"])
+    outdated, update, ignore = map(
+        vars(args).pop, ["outdated", "update", "ignore"])
 
     if outdated:
         if vars(args).pop("names"):
             parser.error("--outdated should be given with no name.")
         find_outdated()
 
-    elif update_outdated is not None:
+    elif update:
         if vars(args).pop("names"):
             parser.error("--update-outdated should be given with no name.")
-        for line in sum(find_outdated().values(), []):
-            name, *_ = line.split()
-            if name in update_outdated:
-                continue
+        names = [name for name, *_ in map(str.split,
+                                          sum(find_outdated().values(), []))]
+        ignored = sorted({*ignore} & {*names})
+        if ignored:
+            LOGGER.info("Ignoring update of {}.".format(", ".join(ignored)))
+        for name in sorted({*names} - {*ignore}):
             try:
                 create_package(name, Options(**vars(args), is_dep=False))
             except PackagingError as exc:
