@@ -37,6 +37,7 @@ Other incorrect packages
 
 - Undeclared dependencies:
     - `hmmlearn`
+    - `memory_profiler` ("strongly recommands" `psutil`)
     - `nitime` (still uses `distutils`...)
     - `sphinx-gallery` (could fetch `requirements.txt` from Github)
     - `supersmoother`

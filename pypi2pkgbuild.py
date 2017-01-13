@@ -240,31 +240,27 @@ def _unique(seq):
     return list(OrderedDict(zip(list(seq)[::-1], repeat(None))))[::-1]
 
 
-def _subprocess_run(argv, *args, **kwargs):
-    """Logging wrapper for `subprocess.run`.
+def _run_shell(args, **kwargs):
+    """Logging wrapper for `subprocess.run`, with useful defaults.
 
     Log at `DEBUG` level except if the `verbose` kwarg is set, in which case
     log at `INFO` level.
     """
-    level = logging.INFO if kwargs.pop("verbose", None) else logging.DEBUG
-    argv_s = (" ".join(map(shlex.quote, argv)) if isinstance(argv, list)
-              else argv)
-    if "cwd" in kwargs:
-        LOGGER.log(level,
-                   "Running subprocess from %s:\n%s", kwargs["cwd"], argv_s)
-    else:
-        LOGGER.log(level, "Running subprocess:\n%s", argv_s)
-    return subprocess.run(argv, *args, **kwargs)
-
-
-def _run_shell(*args, **kwargs):
-    """`_subprocess_run` with useful defaults.
-    """
-    kwargs = {"shell": True, "check": True, "universal_newlines": True,
+    kwargs = {"shell": isinstance(args, str),
+              "check": True,
+              "universal_newlines": True,
               **kwargs}
     if "cwd" in kwargs:
         kwargs["cwd"] = str(Path(kwargs["cwd"]))
-    return _subprocess_run(*args, **kwargs)
+    level = logging.INFO if kwargs.pop("verbose", None) else logging.DEBUG
+    args_s = (args if isinstance(args, str)
+              else " ".join(map(shlex.quote, args)))
+    if "cwd" in kwargs:
+        LOGGER.log(level,
+                   "Running subprocess from %s:\n%s", kwargs["cwd"], args_s)
+    else:
+        LOGGER.log(level, "Running subprocess:\n%s", args_s)
+    return subprocess.run(args, **kwargs)
 
 
 class ArchVersion(namedtuple("_ArchVersion", "epoch pkgver pkgrel")):
@@ -559,24 +555,22 @@ class _BasePackage(ABC):
         cmd = ["makepkg",
                *(["--force"] if options.force else []),
                *shlex.split(options.makepkg)]
-        _subprocess_run(cmd, cwd=str(cwd))
+        _run_shell(cmd, cwd=cwd)
 
-        def _get_fullname():
+        def _get_fullpath():
             # Only one of the archs will be globbed successfully.
-            fullname, = sum(
+            fullpath, = sum(
                 (list(cwd.glob(fname + ".*"))
                  for fname in (
                      _run_shell("makepkg --packagelist", cwd=cwd, stdout=PIPE)
                      .stdout.splitlines())),
                 [])
-            return fullname
+            return fullpath
 
+        fullpath = _get_fullpath()
         # Update PKGBUILD.
-        namcap = (
-            _subprocess_run(
-                ["namcap", _get_fullname().name],
-                cwd=str(cwd), stdout=PIPE, universal_newlines=True)
-            .stdout.splitlines())
+        namcap = (_run_shell(["namcap", fullpath.name], cwd=cwd, stdout=PIPE)
+                  .stdout.splitlines())
         # `pkgver()` may update the PKGBUILD, so reread it.
         pkgbuild_contents = (cwd / "PKGBUILD").read_text()
         # Binary dependencies.
@@ -594,10 +588,12 @@ class _BasePackage(ABC):
         if any(re.search(any_arch_re, line) for line in namcap):
             pkgbuild_contents = pkgbuild_contents.replace(
                 "arch=(any)", "arch=({})".format(THIS_ARCH))
-        # Repackage.
+        # Remove previous package, repackage, and get new name (arch may have
+        # changed).
+        fullpath.unlink()
         (cwd / "PKGBUILD").write_text(pkgbuild_contents)
         _run_shell("makepkg --force --repackage --nodeps", cwd=cwd)
-        fullname = _get_fullname()  # The arch may have changed.
+        fullpath = _get_fullpath()
         # Python dependencies always get misanalyzed so we just filter them
         # away.  Extension modules unconditionally link to `libpthread` (see
         # output of `python-config --libs`) so filter that away too.  It would
@@ -608,11 +604,11 @@ class _BasePackage(ABC):
                 r"\(Dependency included and not needed"
                 r"\|Unused shared library '/usr/lib/libpthread\.so\.0'\)"
             "\" || "
-            "true".format(fullname.name),
+            "true".format(fullpath.name),
             cwd=cwd)
         _run_shell("namcap PKGBUILD", cwd=cwd)
         _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
-        type(self).build_cache[self.pkgname] = (fullname, options.is_dep)
+        type(self).build_cache[self.pkgname] = (fullpath, options.is_dep)
 
 
 class Package(_BasePackage):
@@ -708,7 +704,7 @@ class Package(_BasePackage):
         if self._srctree is None:
             self._srctree = TemporaryDirectory()
             if urllib.parse.urlparse(url["url"]).scheme.startswith("git+"):
-                _subprocess_run(
+                _run_shell(
                     ["git", "clone", url["url"][4:], self._srctree.name])
                 self._srctree.path = Path(self._srctree.name)
             else:
