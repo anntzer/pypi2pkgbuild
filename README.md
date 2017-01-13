@@ -121,8 +121,12 @@ easily install everything by `cd`'ing there and running
 - Resolves Python dependencies via installation in a temporary virtualenv, and
   also creates PKGBUILDs for those that are not available as official packages.
 - Resolves binary dependencies via `namcap` and adds them to the `depends`
-  array if they are installed (thus, it is suggested to first install them as
-  `--asdeps` and then let the generated PKGBUILD pick them up as dependencies).
+  array if they are installed (thus, it is suggested to first install
+  them as `--asdeps` and then let the generated PKGBUILD pick them up as
+  dependencies).  Note that some packages are distributed with a copy of the
+  required libraries; in this case, `pypi2pkgbuild.py`’s behavior will depend
+  on whether the package defaults to using the system-wide library or its own
+  copy.
 - Automatically tries to fetch a missing license file from Github, if
   applicable.
 - Automatically builds the package (with options given in `--makepkg=...`) and

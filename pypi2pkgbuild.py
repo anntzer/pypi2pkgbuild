@@ -1022,7 +1022,8 @@ def main():
         "-g", "--guess-makedepends", metavar="MAKEDEPENDS,...",
         default="cython,swig",
         type=_comma_separated_arg,
-        help="Comma-separated list of makedepends that will be guessed.")
+        help="Comma-separated list of makedepends that will be guessed.  "
+             "Allowed values: cython, swig.")
     parser.add_argument(
         "-t", "--pkgtypes",
         default="anywheel,sdist,manylinuxwheel",

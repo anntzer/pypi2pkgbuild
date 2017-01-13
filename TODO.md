@@ -22,6 +22,9 @@ Issues
   but this can't be done with e.g. wheels.  Perhaps we could hook something
   else?
 
+- Move `numpy` support to `--guess-makedepends`; add `--forced-makedepends`
+  (e.g. for `pomegranate`).
+
 Arch packaging
 ==============
 
