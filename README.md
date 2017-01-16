@@ -80,6 +80,9 @@ accordingly.
 attempting a build without `numpy`, then, in case of failure, a build with
 `numpy`.
 
+Additional Python build-time dependencies (i.e., `setup_requires`) can be
+specified (as PyPI names) using the `--setup-requires` flag.
+
 ## Vendored packages
 
 Some Arch packages (e.g. `ipython`) include a number of smaller PyPI packages.

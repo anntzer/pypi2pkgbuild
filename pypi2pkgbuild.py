@@ -315,7 +315,7 @@ def _get_url_parent_tmpdir(url):
 
 
 @lru_cache()
-def _get_url_retrieve_path(url):
+def _get_url_unpacked_path(url):
     path, = (path for path in Path(_get_url_parent_tmpdir(url).name).iterdir()
              # Exclude the archive.
              if path.is_dir())
@@ -326,16 +326,16 @@ def _get_url_retrieve_path(url):
 def _guess_url_makedepends(url, guess_makedepends):
     makedepends = []
     if ("swig" in guess_makedepends
-            and list(_get_url_retrieve_path(url).glob("**/*.i"))):
+            and list(_get_url_unpacked_path(url).glob("**/*.i"))):
         makedepends.append(NonPyPackageRef("swig"))
     if ("cython" in guess_makedepends
-            and list(_get_url_retrieve_path(url).glob("**/*.pyx"))):
+            and list(_get_url_unpacked_path(url).glob("**/*.pyx"))):
         makedepends.append(PackageRef("Cython"))
     return tuple(makedepends)  # Keep it hashable.
 
 
 @lru_cache()
-def _get_metadata(name, makedepends_cython):
+def _get_metadata(name, setup_requires):
     # Dependency resolution is done by installing the package in a venv and
     # calling `pip show`; otherwise it would be necessary to parse environment
     # markers (from "requires_dist").  The package name may get denormalized
@@ -347,54 +347,55 @@ def _get_metadata(name, makedepends_cython):
     # To handle sdists that depend on numpy, we just see whether installing in
     # presence of numpy makes things better...
     with TemporaryDirectory() as venvdir, \
-            NamedTemporaryFile("r") as more_requires, \
+            NamedTemporaryFile("r") as more_requires_log, \
             NamedTemporaryFile("r") as log:
         script = textwrap.dedent(r"""
         python -mvenv {venvdir}
-        . {venvdir}/bin/activate
+        . '{venvdir}/bin/activate'
         export PIP_CONFIG_FILE=/dev/null
-        pip install --upgrade pip >/dev/null
-        if [[ {install_cython} = True ]]; then
-            pip install cython >/dev/null
-        fi
+        pip install --upgrade {setup_requires} >/dev/null
         install_cmd() {{
-            pip install --no-deps {req}
-        }}
-        show_cmd() {{
+            pip freeze | cut -d= -f1 >'{venvdir}/pre_install_list'
+            if ! pip install --no-deps {req}; then
+                return 1
+            fi
+            pip freeze | cut -d= -f1 >'{venvdir}/post_install_list'
             # installed name, or real name if it doesn't appear (setuptools,
             # pip, Cython, numpy).
-            local name="$(
-                echo " $(pip freeze | cut -d= -f1 | grep -v '^Cython\|numpy$') $name" |
-                tr -s ' ' | tail -c+2 | cut -d' ' -f1)"
+            install_name="$(comm -13 '{venvdir}/pre_install_list' \
+                                     '{venvdir}/post_install_list')"
+            : ${{install_name:="$(basename "$req" .git)"}}
+        }}
+        show_cmd() {{
             python <<EOF
         import json, pip
-        info = next(pip.commands.show.search_packages_info(['$name']))
+        info = next(pip.commands.show.search_packages_info(['$install_name']))
         info.pop('entry_points', None)
         print(json.dumps(info))
         EOF
         }}
-        if install_cmd >/dev/null; then
+        if install_cmd >{log.name}; then
             show_cmd
         else
             pip install numpy >/dev/null
-            echo numpy >>{more_requires.name}
+            echo numpy >>{more_requires_log.name}
             install_cmd >{log.name}
             show_cmd
         fi
         """).format(
-            req=(_get_url_retrieve_path(name) if name.startswith("git+")
-                 else name),
             venvdir=venvdir,
-            more_requires=more_requires,
-            log=log,
-            install_cython=bool(makedepends_cython))
+            setup_requires=" ".join(setup_requires),
+            req=(_get_url_unpacked_path(name) if name.startswith("git+")
+                 else name),
+            more_requires_log=more_requires_log,
+            log=log)
         try:
             process = _run_shell(script, stdout=PIPE)
         except CalledProcessError:
             print(log.read(), file=sys.stderr)
             raise PackagingError(
                 "Failed to obtain metadata for {!r}.".format(name))
-        more_requires = more_requires.read().splitlines()
+        more_requires = more_requires_log.read().splitlines()
     metadata = json.loads(process.stdout)
     metadata["requires"].extend(more_requires)
     return {key.replace("-", "_"): value for key, value in metadata.items()}
@@ -410,10 +411,7 @@ def _get_pypi_info(name, *, pre=False, guess_makedepends=(), _version=""):
             raise PackagingError(
                 "No support for packaging specific revisions.")
         metadata = _get_metadata(
-            name,
-            any(ref.pypi_name == "Cython"
-                for ref in _guess_url_makedepends(name, guess_makedepends)
-                if isinstance(ref, PackageRef)))
+            name, _guess_url_makedepends(name, guess_makedepends).pypi_names)
         try:  # Normalize the name if available on PyPI.
             metadata["name"] = _get_pypi_info(metadata["name"])["info"]["name"]
         except PackagingError:
@@ -566,6 +564,12 @@ class PackageRef:
 
 
 class DependsList(list):
+    @property
+    def pypi_names(self):
+        # Needs to be hashable.
+        return tuple(ref.pypi_name for ref in self
+                     if isinstance(ref, PackageRef))
+
     def __format__(self, fmt):
         # See above re: dependency type.
         if fmt == "Package":
@@ -598,7 +602,8 @@ class _BasePackage(ABC):
             (cwd / fname).write_bytes(content)
         if (isinstance(self, Package)
                 and self._ref.orig_name.startswith("git+")):
-            srctree = _get_url_retrieve_path(self._get_sdist_url())
+            srctree = _get_url_unpacked_path(self._get_sdist_url())
+            # FIXME We could also copy the sdist for nongit packages.
             with suppress(FileNotFoundError):
                 shutil.rmtree(cwd / srctree.name)
             shutil.move(srctree, cwd / srctree.name)
@@ -684,10 +689,7 @@ class Package(_BasePackage):
             _run_shell("if ! pacman -Q {0} >/dev/null 2>&1; then "
                        "sudo pacman -S --asdeps {0}; fi"
                        .format(nonpy_dep.pkgname), verbose=True)
-        metadata = _get_metadata(
-            ref.orig_name,
-            any(ref.pypi_name == "Cython" for ref in self._makedepends
-                if isinstance(ref, PackageRef)))
+        metadata = _get_metadata(ref.orig_name, self._makedepends.pypi_names)
         self._depends = self._find_depends(metadata)
         self._licenses = self._find_license()
 
@@ -755,7 +757,8 @@ class Package(_BasePackage):
 
     def _find_arch_makedepends(self, options):
         self._arch = ["any"]
-        self._makedepends = DependsList([PackageRef("pip")])
+        self._makedepends = DependsList(
+            map(PackageRef, ["pip", *options.setup_requires]))
         archs = sorted(
             {PLATFORM_TAGS[WheelInfo.parse(url["path"]).platform]
              for url in self._urls if url["packagetype"] == "bdist_wheel"})
@@ -817,7 +820,7 @@ class Package(_BasePackage):
                 if _license_found:
                     break
             else:
-                for path in (_get_url_retrieve_path(self._get_sdist_url())
+                for path in (_get_url_unpacked_path(self._get_sdist_url())
                              / license_name
                              for license_name in LICENSE_NAMES):
                     if path.is_file():
@@ -963,7 +966,7 @@ def get_config():
 @lru_cache()
 def create_package(name, options):
     pkg = dispatch_package_builder(name, get_config(), options)
-    if not options.skipdeps:
+    if not options.nodeps:
         pkg.write_deps_to(options)
     pkg.write_to(options)
 
@@ -1005,8 +1008,8 @@ def find_outdated():
 
 
 Options = namedtuple(
-    "Options", "base_path force pre pkgrel guess_makedepends pkgtypes "
-               "skipdeps makepkg is_dep")
+    "Options", "base_path force pre pkgrel guess_makedepends setup_requires "
+               "pkgtypes nodeps makepkg is_dep")
 _description = """\
 Create a PKGBUILD for a PyPI package and run makepkg.
 """
@@ -1022,7 +1025,7 @@ def main():
         "names", metavar="name", nargs="*",
         help="The PyPI package names.")
     parser.add_argument(
-        "-d", "--debug", action="store_true", default=False,
+        "-v", "--verbose", action="store_true", default=False,
         help="Log at DEBUG level.")
     parser.add_argument(
         "-o", "--outdated", action="store_true", default=False,
@@ -1055,20 +1058,25 @@ def main():
         help="Comma-separated list of makedepends that will be guessed.  "
              "Allowed values: cython, swig.")
     parser.add_argument(
+        "-s", "--setup-requires", metavar="PYPI_NAME,...",
+        default="",
+        type=_comma_separated_arg,
+        help="Comma-separated list of setup_requires that will be forced.")
+    parser.add_argument(
         "-t", "--pkgtypes",
         default="anywheel,sdist,manylinuxwheel",
         type=_comma_separated_arg,
         help="Comma-separated preference order for dists.")
     parser.add_argument(
-        "-s", "--skipdeps", action="store_true",
+        "-d", "--nodeps", action="store_true",
         help="Don't generate PKGBUILD for dependencies.")
     parser.add_argument(
         "-m", "--makepkg", metavar="MAKEPKG_OPTS",
         default="--cleanbuild --nodeps",
         help="Additional arguments to pass to makepkg.")
     args = parser.parse_args()
-    logging.basicConfig()
-    log_level = logging.DEBUG if vars(args).pop("debug") else logging.INFO
+    log_level = logging.DEBUG if vars(args).pop("verbose") else logging.INFO
+    logging.basicConfig(level=log_level)
     handler_level = logging.getLogger().handlers[0].level
     @LOGGER.addFilter
     def f(record):
@@ -1125,7 +1133,7 @@ def main():
     cmd = ""
     if Package.build_cache:
         cmd += "pacman -U{} {}".format(
-            "dd" if args.skipdeps else "",
+            "dd" if args.nodeps else "",
             " ".join(
                 str(fpath) for fpath, is_dep in Package.build_cache.values()))
         deps = [name for name, (fpath, is_dep) in Package.build_cache.items()

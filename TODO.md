@@ -22,11 +22,7 @@ Issues
   but this can't be done with e.g. wheels.  Perhaps we could hook something
   else?
 
-- Move `numpy` support to `--guess-makedepends`; add `--forced-makedepends`
-  (e.g. for `pomegranate`).
-
-- Installing one of `setuptools`, `pip`, `Cython`, `numpy` *from their git
-  repo* will fail at name detection time.
+- Move `numpy` support to `--guess-makedepends`.
 
 Arch packaging
 ==============
@@ -38,11 +34,11 @@ Arch packaging
 Mispackaged packages
 ====================
 
-- `extras_requires` (see above):
-    - `scikit-image` (AUR package has similar issue.)
-
-- Setup-time dependencies:
+- Setup-time dependencies (set `--setup-requires` correctly to work around):
     - `pomegranate` (Cython files depend on scipy's BLAS `pxd`s.)
+
+- `extras_requires` (see above):
+    - `scikit-image` (AUR package doesn't even declare `dask` as a dependency.)
 
 - Undeclared dependencies:
     - `hmmlearn`
