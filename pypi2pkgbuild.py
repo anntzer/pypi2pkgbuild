@@ -22,6 +22,7 @@ import subprocess
 from subprocess import CalledProcessError, PIPE
 import sys
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+import textwrap
 import urllib.request
 
 from pip.vcs import VersionControl
@@ -153,8 +154,8 @@ export PIP_CONFIG_FILE=/dev/null
 export PIP_DISABLE_PIP_VERSION_CHECK=true
 
 _first_source() {
-    local sources=("${source_i686[@]}" "${source_x86_64[@]}" "${source[@]}")
-    printf "%s" "${sources[0]}"
+    echo " ${source_i686[@]} ${source_x86_64[@]} ${source[@]}" |
+        tr -s ' ' | tail -c+2 | cut -d' ' -f1
 }
 
 _is_wheel() {
@@ -313,7 +314,7 @@ def _get_metadata(name, makedepends_cython):
     with TemporaryDirectory() as venvdir, \
             NamedTemporaryFile("r") as more_requires, \
             NamedTemporaryFile("r") as log:
-        script = (r"""
+        script = textwrap.dedent(r"""
         python -mvenv {venvdir}
         . {venvdir}/bin/activate
         export PIP_CONFIG_FILE=/dev/null
@@ -323,14 +324,17 @@ def _get_metadata(name, makedepends_cython):
             pip install --no-deps {name}
         }}
         show_cmd() {{
-            # known packages that must be excluded.
-            if [[ {name} =~ ^setuptools|pip|Cython|numpy$ ]]; then
-                name={name}
-            else
-                name="$(pip freeze | cut -d= -f1 | grep -v '^Cython\|numpy$')"
-            fi
-            python -c \
-                "import json, pip; info = next(pip.commands.show.search_packages_info(['$name'])); info.pop('entry_points', None); print(json.dumps(info))"
+            # installed name, or real name if it doesn't appear (setuptools,
+            # pip, Cython, numpy).
+            local name="$(
+                echo " $(pip freeze | cut -d= -f1 | grep -v '^Cython\|numpy$') $name" |
+                tr -s ' ' | tail -c+2 | cut -d' ' -f1)"
+            python <<EOF
+        import json, pip
+        info = next(pip.commands.show.search_packages_info(['$name']))
+        info.pop('entry_points', None)
+        print(json.dumps(info))
+        EOF
         }}
         if install_cmd >/dev/null; then
             show_cmd
@@ -340,16 +344,14 @@ def _get_metadata(name, makedepends_cython):
             install_cmd >{log.name}
             show_cmd
         fi
-        """.format(
-            name={"setuptools": "setuptools", "pip": "pip",
-                  "cython": "Cython", "numpy": "numpy"}.get(
-                      name.lower(), name.lower()),
+        """).format(
+            name=name,
             venvdir=venvdir,
             more_requires=more_requires,
             log=log,
             install_cython=("pip install cython >/dev/null"
                             if makedepends_cython
-                            else "")))
+                            else ""))
         try:
             process = _run_shell(script, stdout=PIPE)
         except CalledProcessError:
@@ -371,6 +373,8 @@ def _get_pypi_info(name, *, pre=False, _version=""):
             # whereas the fragment type must be specified in the PKGBUILD.
             raise PackagingError(
                 "No support for packaging specific revisions.")
+        # FIXME For git packages it is too hard to guess whether Cython is a
+        # dependency... unless we clone the repo first to cache it anyways.
         metadata = _get_metadata(name, True)
         try:  # Normalize the name if available on PyPI.
             metadata["name"] = _get_pypi_info(metadata["name"])["info"]["name"]
