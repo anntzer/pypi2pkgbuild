@@ -25,6 +25,9 @@ Issues
 - Move `numpy` support to `--guess-makedepends`; add `--forced-makedepends`
   (e.g. for `pomegranate`).
 
+- Installing one of `setuptools`, `pip`, `Cython`, `numpy` *from their git
+  repo* will fail at name detection time.
+
 Arch packaging
 ==============
 

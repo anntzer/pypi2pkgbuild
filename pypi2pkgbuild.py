@@ -300,6 +300,41 @@ class PackagingError(Exception):
 
 
 @lru_cache()
+def _get_url_parent_tmpdir(url):
+    cache_dir = TemporaryDirectory()
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme.startswith("git+"):
+        _run_shell(["git", "clone", "--recursive", url[4:]],
+                    cwd=cache_dir.name)
+    else:
+        r = urllib.request.urlopen(url)
+        tmppath = Path(cache_dir.name, Path(parsed.path).name)
+        tmppath.write_bytes(r.read())
+        shutil.unpack_archive(str(tmppath), cache_dir.name)
+    return cache_dir
+
+
+@lru_cache()
+def _get_url_retrieve_path(url):
+    path, = (path for path in Path(_get_url_parent_tmpdir(url).name).iterdir()
+             # Exclude the archive.
+             if path.is_dir())
+    return path
+
+
+@lru_cache()
+def _guess_url_makedepends(url, guess_makedepends):
+    makedepends = []
+    if ("swig" in guess_makedepends
+            and list(_get_url_retrieve_path(url).glob("**/*.i"))):
+        makedepends.append(NonPyPackageRef("swig"))
+    if ("cython" in guess_makedepends
+            and list(_get_url_retrieve_path(url).glob("**/*.pyx"))):
+        makedepends.append(PackageRef("Cython"))
+    return tuple(makedepends)  # Keep it hashable.
+
+
+@lru_cache()
 def _get_metadata(name, makedepends_cython):
     # Dependency resolution is done by installing the package in a venv and
     # calling `pip show`; otherwise it would be necessary to parse environment
@@ -319,9 +354,11 @@ def _get_metadata(name, makedepends_cython):
         . {venvdir}/bin/activate
         export PIP_CONFIG_FILE=/dev/null
         pip install --upgrade pip >/dev/null
-        {install_cython}
+        if [[ {install_cython} = True ]]; then
+            pip install cython >/dev/null
+        fi
         install_cmd() {{
-            pip install --no-deps {name}
+            pip install --no-deps {req}
         }}
         show_cmd() {{
             # installed name, or real name if it doesn't appear (setuptools,
@@ -345,13 +382,12 @@ def _get_metadata(name, makedepends_cython):
             show_cmd
         fi
         """).format(
-            name=name,
+            req=(_get_url_retrieve_path(name) if name.startswith("git+")
+                 else name),
             venvdir=venvdir,
             more_requires=more_requires,
             log=log,
-            install_cython=("pip install cython >/dev/null"
-                            if makedepends_cython
-                            else ""))
+            install_cython=bool(makedepends_cython))
         try:
             process = _run_shell(script, stdout=PIPE)
         except CalledProcessError:
@@ -365,7 +401,7 @@ def _get_metadata(name, makedepends_cython):
 
 
 @lru_cache()
-def _get_pypi_info(name, *, pre=False, _version=""):
+def _get_pypi_info(name, *, pre=False, guess_makedepends=(), _version=""):
     if name.startswith("git+"):
         url, rev = VersionControl(name).get_url_rev()
         if rev:
@@ -373,9 +409,11 @@ def _get_pypi_info(name, *, pre=False, _version=""):
             # whereas the fragment type must be specified in the PKGBUILD.
             raise PackagingError(
                 "No support for packaging specific revisions.")
-        # FIXME For git packages it is too hard to guess whether Cython is a
-        # dependency... unless we clone the repo first to cache it anyways.
-        metadata = _get_metadata(name, True)
+        metadata = _get_metadata(
+            name,
+            any(ref.pypi_name == "Cython"
+                for ref in _guess_url_makedepends(name, guess_makedepends)
+                if isinstance(ref, PackageRef)))
         try:  # Normalize the name if available on PyPI.
             metadata["name"] = _get_pypi_info(metadata["name"])["info"]["name"]
         except PackagingError:
@@ -474,11 +512,13 @@ class NonPyPackageRef:
 
 
 class PackageRef:
-    def __init__(self, name, *, pre=False, subpkg_of=None):
+    def __init__(self, name, *,
+                 pre=False, guess_makedepends=(), subpkg_of=None):
         # If `subpkg_of` is set, do not attempt to use the Arch Linux name,
         # and name the package python--$pkgname to prevent collision.
         self.orig_name = name  # A name or an URL.
-        self.info = _get_pypi_info(name, pre=pre)
+        self.info = _get_pypi_info(
+            name, pre=pre, guess_makedepends=guess_makedepends)
         self.pypi_name = self.info["info"]["name"] # Name on PyPI.
 
         if subpkg_of:
@@ -556,6 +596,12 @@ class _BasePackage(ABC):
         (cwd / "PKGBUILD").write_text(self._pkgbuild)
         for fname, content in self._files.items():
             (cwd / fname).write_bytes(content)
+        if (isinstance(self, Package)
+                and self._ref.orig_name.startswith("git+")):
+            srctree = _get_url_retrieve_path(self._get_sdist_url())
+            with suppress(FileNotFoundError):
+                shutil.rmtree(cwd / srctree.name)
+            shutil.move(srctree, cwd / srctree.name)
         cmd = ["makepkg",
                *(["--force"] if options.force else []),
                *shlex.split(options.makepkg)]
@@ -623,12 +669,11 @@ class Package(_BasePackage):
         self._pkgrel = options.pkgrel
 
         stream = StringIO()
-        self._srctree = None
 
         LOGGER.info("Packaging %s %s.",
                     self.pkgname, ref.info["info"]["version"])
-        self._urls = self._filter_and_sort_urls(ref.info["urls"],
-                                                options.pkgtypes)
+        self._urls = self._filter_and_sort_urls(
+            ref.info["urls"], options.pkgtypes)
         if not self._urls:
             raise PackagingError(
                 "No URL available for package {!r}.".format(self.pkgname))
@@ -703,23 +748,10 @@ class Package(_BasePackage):
                 continue
         return [url for url, key in sorted(urls, key=lambda kv: kv[1])]
 
-    def _get_srctree(self):
-        url = next(url for url in self._urls if url["packagetype"] == "sdist")
-        if self._srctree is None:
-            self._srctree = TemporaryDirectory()
-            if urllib.parse.urlparse(url["url"]).scheme.startswith("git+"):
-                _run_shell(
-                    ["git", "clone", url["url"][4:], self._srctree.name])
-                self._srctree.path = Path(self._srctree.name)
-            else:
-                r = urllib.request.urlopen(url["url"])
-                tmppath = Path(self._srctree.name, Path(url["path"]).name)
-                tmppath.write_bytes(r.read())
-                shutil.unpack_archive(str(tmppath), self._srctree.name)
-                self._srctree.path = Path(
-                    self._srctree.name,
-                    "{0._ref.pypi_name}-{0.pkgver}".format(self))
-        return self._srctree.path
+
+    def _get_sdist_url(self):
+        return next(url for url in self._urls
+                    if url["packagetype"] == "sdist")["url"]
 
     def _find_arch_makedepends(self, options):
         self._arch = ["any"]
@@ -730,17 +762,9 @@ class Package(_BasePackage):
         if self._urls[0]["packagetype"] == "bdist_wheel":
             self._arch = archs
         else:
-            if ("swig" in options.guess_makedepends
-                    and list(self._get_srctree().glob("**/*.i"))):
-                self._arch = ["i686", "x86_64"]
-                self._makedepends.append(NonPyPackageRef("swig"))
-            if ("cython" in options.guess_makedepends
-                    and list(self._get_srctree().glob("**/*.pyx"))):
-                self._arch = ["i686", "x86_64"]
-                self._makedepends.append(PackageRef("Cython"))
-            # If there are just C sources to be compiled (e.g. `xxhash`, `arch`
-            # will be fixed via namcap (because we can't be sure whether we are
-            # going to compile them, e.g. for `pycparser`).
+            self._makedepends.extend(
+                _guess_url_makedepends(
+                    self._get_sdist_url(), options.guess_makedepends))
 
     def _find_depends(self, metadata):
         return DependsList(map(PackageRef, metadata["requires"]))
@@ -793,7 +817,8 @@ class Package(_BasePackage):
                 if _license_found:
                     break
             else:
-                for path in (self._get_srctree() / license_name
+                for path in (_get_url_retrieve_path(self._get_sdist_url())
+                             / license_name
                              for license_name in LICENSE_NAMES):
                     if path.is_file():
                         self._files.update(LICENSE=path.read_bytes())
@@ -917,7 +942,8 @@ class MetaPackage(_BasePackage):
 
 
 def dispatch_package_builder(name, config, options):
-    ref = PackageRef(name, pre=options.pre)
+    ref = PackageRef(
+        name, pre=options.pre, guess_makedepends=options.guess_makedepends)
     cls = Package if len(ref.arch_packaged) <= 1 else MetaPackage
     return cls(ref, config, options)
 

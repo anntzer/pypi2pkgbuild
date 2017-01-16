@@ -69,11 +69,6 @@ by `pypi2pkgbuild.py`.  It is recommended to use the `-i` flag to calls to
 `pypi2pkgbuild.py` (e.g. in an alias) to exclude packages that are mishandled
 by `pypi2pkgbuild.py` (see [TODO.md](TODO.md#mispackaged-packages)).
 
-- Packaging `git` packages currently requires cloning the package twice as pip
-  [does not cache the repository](https://github.com/pypa/pip/issues/218).
-  To save bandwidth, one can first locally clone the repository, then run
-  `pypi2pkgbuild.py file://$PATH_TO_LOCAL_CLONE`.
-
 ## Build-time dependencies of packages
 
 `pypi2pkgbuild.py` attempts to guess whether `Cython` and `SWIG` are build-time
