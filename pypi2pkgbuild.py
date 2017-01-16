@@ -300,26 +300,32 @@ class PackagingError(Exception):
 
 
 @lru_cache()
-def _get_url_parent_tmpdir(url):
+def _get_url_impl(url):
     cache_dir = TemporaryDirectory()
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme.startswith("git+"):
         _run_shell(["git", "clone", "--recursive", url[4:]],
                     cwd=cache_dir.name)
+        packed_path = cache_dir.name
     else:
         r = urllib.request.urlopen(url)
-        tmppath = Path(cache_dir.name, Path(parsed.path).name)
-        tmppath.write_bytes(r.read())
-        shutil.unpack_archive(str(tmppath), cache_dir.name)
-    return cache_dir
+        packed_path = Path(cache_dir.name, Path(parsed.path).name)
+        packed_path.write_bytes(r.read())
+        shutil.unpack_archive(str(packed_path), cache_dir.name)
+    unpacked_path, = (
+        path for path in Path(cache_dir.name).iterdir() if path.is_dir())
+    # Keep a reference to the TemporaryDirectory.
+    return cache_dir, packed_path, unpacked_path
 
 
-@lru_cache()
+def _get_url_packed_path(url):
+    cache_dir, packed_path, unpacked_path = _get_url_impl(url)
+    return packed_path
+
+
 def _get_url_unpacked_path(url):
-    path, = (path for path in Path(_get_url_parent_tmpdir(url).name).iterdir()
-             # Exclude the archive.
-             if path.is_dir())
-    return path
+    cache_dir, packed_path, unpacked_path = _get_url_impl(url)
+    return unpacked_path
 
 
 @lru_cache()
@@ -601,12 +607,15 @@ class _BasePackage(ABC):
         for fname, content in self._files.items():
             (cwd / fname).write_bytes(content)
         if (isinstance(self, Package)
-                and self._ref.orig_name.startswith("git+")):
-            srctree = _get_url_unpacked_path(self._get_sdist_url())
-            # FIXME We could also copy the sdist for nongit packages.
+                and self._get_first_package_type() != "bdist_wheel"):
+            srctree = _get_url_packed_path(self._get_sdist_url())
+            dest = cwd / srctree.name
             with suppress(FileNotFoundError):
-                shutil.rmtree(cwd / srctree.name)
-            shutil.move(srctree, cwd / srctree.name)
+                if dest.is_dir():
+                    shutil.rmtree(dest)
+                else:
+                    dest.unlink()
+            shutil.move(srctree, dest)
         cmd = ["makepkg",
                *(["--force"] if options.force else []),
                *shlex.split(options.makepkg)]
@@ -750,6 +759,8 @@ class Package(_BasePackage):
                 continue
         return [url for url, key in sorted(urls, key=lambda kv: kv[1])]
 
+    def _get_first_package_type(self):
+        return self._urls[0]["packagetype"]
 
     def _get_sdist_url(self):
         return next(url for url in self._urls
@@ -762,7 +773,7 @@ class Package(_BasePackage):
         archs = sorted(
             {PLATFORM_TAGS[WheelInfo.parse(url["path"]).platform]
              for url in self._urls if url["packagetype"] == "bdist_wheel"})
-        if self._urls[0]["packagetype"] == "bdist_wheel":
+        if self._get_first_package_type() == "bdist_wheel":
             self._arch = archs
         else:
             self._makedepends.extend(
