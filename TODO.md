@@ -43,7 +43,6 @@ Mispackaged packages
 - Undeclared dependencies:
     - `hmmlearn`
     - `memory_profiler` ("Strongly recommands" `psutil`.)
-    - `nitime` (Still uses `distutils`...)
     - `sphinx-gallery` (Could fetch `requirements.txt` from Github.)
     - `supersmoother`
 
