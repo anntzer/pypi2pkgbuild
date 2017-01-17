@@ -164,7 +164,7 @@ _is_wheel() {
 
 _dist_name() {
     basename "$(_first_source)" |
-      sed 's/\\(""" + re.escape("|".join(SDIST_SUFFIXES)) + """\\)$//'
+      sed 's/\\(""" + re.escape("|".join(SDIST_SUFFIXES)) + """\\|\\.git\\)$//'
 }
 
 if [[ $(_first_source) =~ ^git+ ]]; then
@@ -306,25 +306,29 @@ def _get_url_impl(url):
     if parsed.scheme.startswith("git+"):
         _run_shell(["git", "clone", "--recursive", url[4:]],
                     cwd=cache_dir.name)
-        packed_path = cache_dir.name
-    else:
-        r = urllib.request.urlopen(url)
-        packed_path = Path(cache_dir.name, Path(parsed.path).name)
-        packed_path.write_bytes(r.read())
-        shutil.unpack_archive(str(packed_path), cache_dir.name)
-    unpacked_path, = (
-        path for path in Path(cache_dir.name).iterdir() if path.is_dir())
+    elif parsed.scheme == "pip":
+        _run_shell(["pip", "download", "--no-deps",
+                    "-d", cache_dir.name, parsed.netloc])
+    elif parsed.scheme == "pip-nobinary":
+        _run_shell(["pip", "download", "--no-binary=:all:", "--no-deps",
+                    "-d", cache_dir.name, parsed.netloc])
+    packed_path, = (path for path in Path(cache_dir.name).iterdir())
     # Keep a reference to the TemporaryDirectory.
-    return cache_dir, packed_path, unpacked_path
+    return cache_dir, packed_path
 
 
 def _get_url_packed_path(url):
-    cache_dir, packed_path, unpacked_path = _get_url_impl(url)
+    cache_dir, packed_path = _get_url_impl(url)
     return packed_path
 
 
+@lru_cache()
 def _get_url_unpacked_path(url):
-    cache_dir, packed_path, unpacked_path = _get_url_impl(url)
+    cache_dir, packed_path = _get_url_impl(url)
+    if packed_path.is_file():  # pip://
+        shutil.unpack_archive(str(packed_path), cache_dir.name)
+    unpacked_path, = (
+        path for path in Path(cache_dir.name).iterdir() if path.is_dir())
     return unpacked_path
 
 
@@ -337,7 +341,7 @@ def _guess_url_makedepends(url, guess_makedepends):
     if ("cython" in guess_makedepends
             and list(_get_url_unpacked_path(url).glob("**/*.pyx"))):
         makedepends.append(PackageRef("Cython"))
-    return tuple(makedepends)  # Keep it hashable.
+    return DependsTuple(makedepends)
 
 
 @lru_cache()
@@ -562,14 +566,14 @@ class PackageRef:
         # However, the owning metapackage should list their vendorees
         # explicitly, so that they do not end up unrequired (other metapackages
         # don't matter as they only depend on their own components).
-        # This logic is implemented in `DependsList.__fmt__`.
+        # This logic is implemented in `DependsTuple.__fmt__`.
         self.depname = depname
         self.arch_version = arch_version
         self.arch_packaged = arch_packaged
         self.exists = arch_version is not None
 
 
-class DependsList(list):
+class DependsTuple(tuple):  # Keep it hashable.
     @property
     def pypi_names(self):
         # Needs to be hashable.
@@ -606,9 +610,8 @@ class _BasePackage(ABC):
         (cwd / "PKGBUILD").write_text(self._pkgbuild)
         for fname, content in self._files.items():
             (cwd / fname).write_bytes(content)
-        if (isinstance(self, Package)
-                and self._get_first_package_type() != "bdist_wheel"):
-            srctree = _get_url_packed_path(self._get_sdist_url())
+        if isinstance(self, Package):
+            srctree = _get_url_packed_path(self._get_preferred_url())
             dest = cwd / srctree.name
             with suppress(FileNotFoundError):
                 if dest.is_dir():
@@ -763,12 +766,16 @@ class Package(_BasePackage):
         return self._urls[0]["packagetype"]
 
     def _get_sdist_url(self):
-        return next(url for url in self._urls
-                    if url["packagetype"] == "sdist")["url"]
+        return (self._ref.orig_name if self._ref.orig_name.startswith("git+")
+                else "pip-nobinary://{}".format(self._ref.pypi_name))
+
+    def _get_preferred_url(self):
+        return (self._ref.orig_name if self._ref.orig_name.startswith("git+")
+                else "pip://{}".format(self._ref.pypi_name))
 
     def _find_arch_makedepends(self, options):
         self._arch = ["any"]
-        self._makedepends = DependsList(
+        self._makedepends = DependsTuple(
             map(PackageRef, ["pip", *options.setup_requires]))
         archs = sorted(
             {PLATFORM_TAGS[WheelInfo.parse(url["path"]).platform]
@@ -776,12 +783,13 @@ class Package(_BasePackage):
         if self._get_first_package_type() == "bdist_wheel":
             self._arch = archs
         else:
-            self._makedepends.extend(
-                _guess_url_makedepends(
-                    self._get_sdist_url(), options.guess_makedepends))
+            self._makedepends = DependsTuple((
+                *self._makedepends,
+                *_guess_url_makedepends(
+                    self._get_sdist_url(), options.guess_makedepends)))
 
     def _find_depends(self, metadata):
-        return DependsList(map(PackageRef, metadata["requires"]))
+        return DependsTuple(map(PackageRef, metadata["requires"]))
 
     def _find_license(self):
         info = self._ref.info["info"]
@@ -871,7 +879,7 @@ class Package(_BasePackage):
     makedepends = property(
         lambda self: self._makedepends)
     checkdepends = property(
-        lambda self: DependsList())
+        lambda self: DependsTuple())
 
     @property
     def provides(self):
@@ -900,7 +908,7 @@ class MetaPackage(_BasePackage):
         self._ref = ref
         self._arch_version = self._ref.arch_version._replace(
             pkgrel=self._ref.arch_version.pkgrel + ".99")
-        self._subpkgrefs = DependsList(
+        self._subpkgrefs = DependsTuple(
             PackageRef(name, subpkg_of=ref) for name in ref.arch_packaged)
         self._subpkgs = [
             Package(ref, config, options) for ref in self._subpkgrefs]
@@ -933,9 +941,9 @@ class MetaPackage(_BasePackage):
     depends = property(
         lambda self: self._subpkgrefs)
     makedepends = property(
-        lambda self: DependsList())
+        lambda self: DependsTuple())
     checkdepends = property(
-        lambda self: DependsList())
+        lambda self: DependsTuple())
     provides = property(
         lambda self: "")
 
