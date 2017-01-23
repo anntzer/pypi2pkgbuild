@@ -25,6 +25,7 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 import textwrap
 import urllib.request
 
+from pip._vendor.distlib.util import normalize_name as distlib_normalize_name
 from pip.vcs import VersionControl
 from pkg_resources.extern.packaging.version import parse as version_parse
 
@@ -1127,12 +1128,14 @@ def main():
     elif update:
         if vars(args).pop("names"):
             parser.error("--update-outdated should be given with no name.")
-        names = [name for name, *_ in map(str.split,
-                                          sum(find_outdated().values(), []))]
-        ignored = sorted({*ignore} & {*names})
+        ignore = {*map(distlib_normalize_name, ignore)}
+        names = {distlib_normalize_name(name)
+                 for name, *_ in map(str.split,
+                                     sum(find_outdated().values(), []))}
+        ignored = ignore & names
         if ignored:
-            LOGGER.info("Ignoring update of {}.".format(", ".join(ignored)))
-        for name in sorted({*names} - {*ignore}):
+            LOGGER.info("Ignoring update of %s.", ", ".join(sorted(ignored)))
+        for name in sorted(names - ignore):
             try:
                 create_package(name, Options(**vars(args), is_dep=False))
             except PackagingError as exc:
