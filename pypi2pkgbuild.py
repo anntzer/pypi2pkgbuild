@@ -367,7 +367,7 @@ def _get_metadata(name, setup_requires):
         pip install --upgrade {setup_requires} >/dev/null
         install_cmd() {{
             pip freeze | cut -d= -f1 >'{venvdir}/pre_install_list'
-            if ! pip install --no-deps {req}; then
+            if ! pip install --no-deps '{req}'; then
                 return 1
             fi
             pip freeze | cut -d= -f1 >'{venvdir}/post_install_list'
@@ -375,7 +375,7 @@ def _get_metadata(name, setup_requires):
             # pip, Cython, numpy).
             install_name="$(comm -13 '{venvdir}/pre_install_list' \
                                      '{venvdir}/post_install_list')"
-            : ${{install_name:="$(basename "$req" .git)"}}
+            : ${{install_name:="$(basename '{req}' .git)"}}
         }}
         show_cmd() {{
             python <<EOF
