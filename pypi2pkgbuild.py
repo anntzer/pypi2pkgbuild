@@ -26,8 +26,8 @@ import textwrap
 import urllib.request
 
 from pip._vendor.distlib.util import normalize_name as distlib_normalize_name
+from pip._vendor.packaging.version import parse as version_parse
 from pip.vcs import VersionControl
-from pkg_resources.extern.packaging.version import parse as version_parse
 
 
 LOGGER = logging.getLogger(Path(__file__).stem)
