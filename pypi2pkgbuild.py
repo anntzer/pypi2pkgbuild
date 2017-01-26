@@ -227,14 +227,6 @@ package() {
 }
 """
 
-GITIGNORE = """\
-*
-!.gitignore
-!.SRCINFO
-!PKGBUILD
-!PKGBUILD_EXTRAS
-"""
-
 
 def _unique(seq):
     """Return unique elements in a sequence, keeping them in order.
@@ -605,8 +597,6 @@ class _BasePackage(ABC):
     def write_to(self, options):
         cwd = options.base_path / self.pkgname
         cwd.mkdir(parents=True, exist_ok=options.force)
-        _run_shell("git init .", cwd=cwd)
-        (cwd / ".gitignore").write_text(GITIGNORE)
         (cwd / "PKGBUILD_EXTRAS").open("a").close()
         (cwd / "PKGBUILD").write_text(self._pkgbuild)
         for fname, content in self._files.items():

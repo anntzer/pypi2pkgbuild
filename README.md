@@ -28,12 +28,11 @@ One can even run `pypi2pkgbuild.py` on itself to create a proper Arch package
 
 ## Usage
 
-`pypi2pkgbuild.py PYPINAME` creates a PKGBUILD (in a git repo) for the latest
-version of the given PyPI package (including prereleases if the `--pre` flag is
-passed.  Because PyPI's dependencies are somewhat unreliable, it installs the
-package in a virtualenv to figure out the dependencies.  Note that thanks to
-`pip`'s wheel cache, the build is later reused; i.e. the procedure entails no
-extra work.
+`pypi2pkgbuild.py PYPINAME` creates a PKGBUILD for the latest version of the
+given PyPI package (including prereleases if the `--pre` flag is passed.
+Because PyPI's dependencies are somewhat unreliable, it installs the package in
+a virtualenv to figure out the dependencies.  Note that thanks to `pip`'s wheel
+cache, the build is later reused; i.e. the procedure entails no extra work.
 
 A `-git` package can be built with `pypi2pkbguild.py git+https://...`.
 
