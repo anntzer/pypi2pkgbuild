@@ -397,7 +397,7 @@ def _get_metadata(name, setup_requires):
         except CalledProcessError:
             sys.stderr.write(log.read())
             raise PackagingError(
-                "Failed to obtain metadata for {!r}.".format(name))
+                "Failed to obtain metadata for {}.".format(name))
         more_requires = more_requires_log.read().splitlines()
     metadata = json.loads(process.stdout)
     metadata["requires"].extend(more_requires)
@@ -479,12 +479,18 @@ def _find_installed_name_version(pypi_name, *, ignore_vendored=False):
             stdout=PIPE, check=False).stdout[:-1].split())
     if parts:
         pkgname, version = parts  # This will raise if there is an ambiguity.
-        if (pkgname.endswith("-git")
-                and _run_shell(
+        if pkgname.endswith("-git"):
+            expected_conflict = pkgname[:-len("-git")]
+            if _run_shell(
                     "pacman -Qi {} 2>/dev/null | grep 'Conflicts With *: {}$'"
-                        .format(pkgname, pkgname[:-len("-git")]),
-                    check=False).returncode == 0):
-            pkgname = pkgname[:-len("-git")]
+                    .format(pkgname, expected_conflict),
+                    check=False).returncode == 0:
+                pkgname = pkgname[:-len("-git")]
+            else:
+                raise PackagingError(
+                    "Found installed package {} which does NOT conflict with "
+                    "{}.  Please uninstall it first."
+                    .format(pkgname, expected_conflict))
         if ignore_vendored and pkgname.startswith("python--"):
             return
         else:
@@ -684,7 +690,7 @@ class Package(_BasePackage):
             ref.info["urls"], options.pkgtypes)
         if not self._urls:
             raise PackagingError(
-                "No URL available for package {!r}.".format(self.pkgname))
+                "No URL available for package {}.".format(self.pkgname))
 
         self._find_arch_makedepends(options)
         for nonpy_dep in [ref for ref in self._makedepends
