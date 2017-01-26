@@ -38,11 +38,12 @@ Mispackaged packages
     - `pomegranate` (Cython files depend on scipy's BLAS `pxd`s.)
 
 - `extras_requires` (see above):
-    - `scikit-image` (AUR package doesn't even declare `dask` as a dependency.)
+    - `scikit-image` (The AUR package doesn't even declare `dask` as a
+      dependency.)
 
 - Undeclared dependencies:
     - `hmmlearn`
-    - `memory_profiler` ("Strongly recommands" `psutil`.)
+    - `memory_profiler` ("Strongly recommends" `psutil`.)
     - `sphinx-gallery` (Could fetch `requirements.txt` from Github.)
     - `supersmoother`
 
@@ -51,3 +52,7 @@ Mispackaged packages
 
 - Wrappers for binaries:
     - `graphviz`
+
+- Undetected split packages:
+    - Arch splits `pygments` into `python-pygments` and `pygmentize`, but
+      `pypi2pkgbuild.py` only sees the former.

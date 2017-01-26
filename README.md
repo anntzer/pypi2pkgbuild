@@ -3,6 +3,18 @@
 Convert PyPI packages to Arch Linux packages, inspired from
 [pip2arch](https://github.com/bluepeppers/pip2arch).
 
+<!-- vim-markdown-toc GFM -->
+* [Dependencies and installation](#dependencies-and-installation)
+* [Usage](#usage)
+    * [Usage notes](#usage-notes)
+* [Build-time dependencies of packages](#build-time-dependencies-of-packages)
+* [Vendored packages](#vendored-packages)
+* [Comparison with other tools](#comparison-with-other-tools)
+    * [Comparison with pip2arch](#comparison-with-pip2arch)
+    * [Comparison with fpm](#comparison-with-fpm)
+
+<!-- vim-markdown-toc -->
+
 ## Dependencies and installation
 
 `pypi2pkgbuild.py` depends on the Arch Linux packages `pkgfile` and
@@ -11,7 +23,7 @@ Convert PyPI packages to Arch Linux packages, inspired from
 The script can be installed with `pip install [--user] .`, or can also be run
 directly.
 
-One can even run PyPI2PKGBUILD on itself to create a proper Arch package
+One can even run `pypi2pkgbuild.py` on itself to create a proper Arch package
 (`pypi2pkgbuild.py git+https://github.com/anntzer/pypi2pkgbuild`).
 
 ## Usage
@@ -54,7 +66,7 @@ that excludes `pypi2pkgbuild.py`-generated packages that do not appear in the
 official repositories, e.g., for `pacaur`:
 ```
 pacaur() {
-    if [[ "$@" = "-Syu" ]]; then
+    if [[ "$1" = "-Syu" ]]; then
         # First update, in case some packages moved in or out of the official
         # repos.
         sudo pacman -Sy
@@ -70,6 +82,11 @@ the AUR, as the user may have done so to bypass some incorrect packaging
 by `pypi2pkgbuild.py`.  It is recommended to use the `-i` flag to calls to
 `pypi2pkgbuild.py` (e.g. in an alias) to exclude packages that are mishandled
 by `pypi2pkgbuild.py` (see [TODO.md](TODO.md#mispackaged-packages)).
+
+- In order to package a locally available git repository, use
+```
+$ pypi2pkgbuild.py git+file://$absolute_path_to_repo  # (e.g. file:///home/...)
+```
 
 ## Build-time dependencies of packages
 
