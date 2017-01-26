@@ -17,8 +17,10 @@ Convert PyPI packages to Arch Linux packages, inspired from
 
 ## Dependencies and installation
 
-`pypi2pkgbuild.py` depends on the Arch Linux packages `pkgfile` and
-`python-pip`.
+`pypi2pkgbuild.py` depends on the Arch Linux packages
+[`namcap`](https://wiki.archlinux.org/index.php/Namcap),
+[`pkgfile`](https://wiki.archlinux.org/index.php/Pkgfile) and
+[`python-pip`](https://wiki.archlinux.org/index.php/Python#Package_management).
 
 The script can be installed with `pip install [--user] .`, or can also be run
 directly.

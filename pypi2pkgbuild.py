@@ -1104,14 +1104,14 @@ def main():
             record.levelno = max(handler_level, record.levelno)
         return True
 
+    # Dependency checking needs to happen after logging is configured.
+    for cmd in ["namcap", "pkgfile"]:
+        if shutil.which(cmd) is None:
+            parser.error("Missing dependency: {}".format(cmd))
     try:
-        # This needs to happen after logging is configured.
         _run_shell("pkgfile pkgfile >/dev/null")
     except CalledProcessError:
-        # Display one of:
-        #   - "/bin/sh: pkgfile: command not found"
-        #   - "error: No repo files found. Please run `pkgfile --update'."
-        # on stderr.
+        # "error: No repo files found. Please run `pkgfile --update'."
         sys.exit(1)
 
     outdated, update, ignore = map(
