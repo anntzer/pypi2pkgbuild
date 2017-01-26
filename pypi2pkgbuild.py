@@ -403,7 +403,7 @@ def _get_metadata(name, setup_requires):
         try:
             process = _run_shell(script, stdout=PIPE)
         except CalledProcessError:
-            print(log.read(), file=sys.stderr)
+            sys.stderr.write(log.read())
             raise PackagingError(
                 "Failed to obtain metadata for {!r}.".format(name))
         more_requires = more_requires_log.read().splitlines()
@@ -975,11 +975,14 @@ def dispatch_package_builder(name, config, options):
 def get_config():
     with TemporaryDirectory() as tmpdir:
         mini_pkgbuild = ('pkgver=0\npkgrel=0\narch=(any)\n'
-                         'prepare() { printf "%s\n" "$PACKAGER"; exit 0; }')
+                         'prepare() { printf "%s" "$PACKAGER"; exit 0; }')
         Path(tmpdir, "PKGBUILD").write_text(mini_pkgbuild)
-        maintainer = (
-            _run_shell("makepkg", cwd=tmpdir, stdout=PIPE, stderr=PIPE)
-            .stdout[:-1])  # Strip newline.
+        try:
+            maintainer = _run_shell(
+                "makepkg", cwd=tmpdir, stdout=PIPE, stderr=PIPE).stdout
+        except CalledProcessError as e:
+            sys.stderr.write(e.stderr)
+            raise
     return {"maintainer": maintainer}
 
 
