@@ -974,8 +974,12 @@ def dispatch_package_builder(name, config, options):
 @lru_cache()
 def get_config():
     with TemporaryDirectory() as tmpdir:
-        mini_pkgbuild = ('pkgver=0\npkgrel=0\narch=(any)\n'
-                         'prepare() { printf "%s" "$PACKAGER"; exit 0; }')
+        mini_pkgbuild = (
+            "pkgname=_\n"
+            "pkgver=0\n"
+            "pkgrel=0\n"
+            "arch=(any)\n"
+            'prepare() { printf "%s" "$PACKAGER"; exit 0; }')
         Path(tmpdir, "PKGBUILD").write_text(mini_pkgbuild)
         try:
             maintainer = _run_shell(
