@@ -327,7 +327,7 @@ def _get_url_unpacked_path(url):
 
 @lru_cache()
 def _guess_url_makedepends(url, guess_makedepends):
-    makedepends = []
+    makedepends = [PackageRef("pip")]
     if ("swig" in guess_makedepends
             and list(_get_url_unpacked_path(url).glob("**/*.i"))):
         makedepends.append(NonPyPackageRef("swig"))
@@ -766,16 +766,17 @@ class Package(_BasePackage):
 
     def _find_arch_makedepends(self, options):
         self._arch = ["any"]
-        self._makedepends = DependsTuple(
-            map(PackageRef, ["pip", *options.setup_requires]))
         archs = sorted(
             {PLATFORM_TAGS[WheelInfo.parse(url["path"]).platform]
              for url in self._urls if url["packagetype"] == "bdist_wheel"})
         if self._get_first_package_type() == "bdist_wheel":
             self._arch = archs
+            self._makedepends = DependsTuple(
+                map(PackageRef, ["pip", *options.setup_requires]))
         else:
+            self._arch = ["any"]
             self._makedepends = DependsTuple((
-                *self._makedepends,
+                *map(PackageRef, options.setup_requires),
                 *_guess_url_makedepends(
                     self._get_sdist_url(), options.guess_makedepends)))
 
