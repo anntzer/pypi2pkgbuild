@@ -88,6 +88,19 @@ by `pypi2pkgbuild.py` (see [TODO.md](TODO.md#mispackaged-packages)).
 ```
 $ pypi2pkgbuild.py git+file://$absolute_path_to_repo  # (e.g. file:///home/...)
 ```
+In order to package a locally available sdist or wheel, use
+```
+$ pypi2pkgbuild.py file://$absolute_path_to_file  # (e.g. file:///home/...)
+```
+Note that in both cases *absolute* paths are necessary.
+
+Moreover, even when building with `-d` ("do not build dependencies"),
+`pypi2pkgbuild.py` needs to be able to *find* the dependencies -- either
+as a PyPI package, or as a locally installed package.  The reason is that
+`pypi2pkgbuild.py` uses this information to normalize the name of the Arch
+packages (for the dependencies, in this case).  Thus, when building multiple
+packages that are not available on PyPI, they need to be built in topological
+order of the dependency graph.
 
 ## Build-time dependencies of packages
 

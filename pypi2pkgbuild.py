@@ -305,6 +305,9 @@ def _get_url_impl(url):
     elif parsed.scheme == "pip-nobinary":
         _run_shell(["pip", "download", "--no-binary=:all:", "--no-deps",
                     "-d", cache_dir.name, parsed.netloc])
+    else:
+        Path(cache_dir.name, Path(parsed.path).name).write_bytes(
+            urllib.request.urlopen(url).read())
     packed_path, = (path for path in Path(cache_dir.name).iterdir())
     # Keep a reference to the TemporaryDirectory.
     return cache_dir, packed_path
@@ -317,6 +320,9 @@ def _get_url_packed_path(url):
 
 @lru_cache()
 def _get_url_unpacked_path(url):
+    parsed = urllib.parse.urlparse(url)
+    if parsed.path.endswith(".whl"):
+        return Path("/dev/null")  # Slight hack...
     cache_dir, packed_path = _get_url_impl(url)
     if packed_path.is_file():  # pip://
         shutil.unpack_archive(str(packed_path), cache_dir.name)
@@ -327,13 +333,15 @@ def _get_url_unpacked_path(url):
 
 @lru_cache()
 def _guess_url_makedepends(url, guess_makedepends):
+    parsed = urllib.parse.urlparse(url)
     makedepends = [PackageRef("pip")]
-    if ("swig" in guess_makedepends
-            and list(_get_url_unpacked_path(url).glob("**/*.i"))):
-        makedepends.append(NonPyPackageRef("swig"))
-    if ("cython" in guess_makedepends
-            and list(_get_url_unpacked_path(url).glob("**/*.pyx"))):
-        makedepends.append(PackageRef("Cython"))
+    if not parsed.path.endswith(".whl"):
+        if ("swig" in guess_makedepends
+                and list(_get_url_unpacked_path(url).glob("**/*.i"))):
+            makedepends.append(NonPyPackageRef("swig"))
+        if ("cython" in guess_makedepends
+                and list(_get_url_unpacked_path(url).glob("**/*.pyx"))):
+            makedepends.append(PackageRef("Cython"))
     return DependsTuple(makedepends)
 
 
@@ -405,18 +413,29 @@ def _get_metadata(name, setup_requires):
 
 
 @lru_cache()
-def _get_pypi_info(name, *, pre=False, guess_makedepends=(), _version=""):
-    if name.startswith("git+"):
+def _get_info(name, *,
+              pre=False,
+              guess_makedepends=(),
+              _sources=("git", "local", "pypi"),
+              _version=""):
+
+    parsed = urllib.parse.urlparse(name)
+
+    def _get_info_git():
+        if not parsed.scheme.startswith("git+"):
+            return
         url, rev = VersionControl(name).get_url_rev()
         if rev:
             # FIXME pip guesses whether a name is a branch, a commit or a tag,
             # whereas the fragment type must be specified in the PKGBUILD.
+            # FIXME fragment support.
             raise PackagingError(
                 "No support for packaging specific revisions.")
         metadata = _get_metadata(
             name, _guess_url_makedepends(name, guess_makedepends).pypi_names)
         try:  # Normalize the name if available on PyPI.
-            metadata["name"] = _get_pypi_info(metadata["name"])["info"]["name"]
+            metadata["name"] = _get_info(
+                metadata["name"], _sources=("pypi",))["info"]["name"]
         except PackagingError:
             pass
         return {"info": {"download_url": url,
@@ -424,18 +443,33 @@ def _get_pypi_info(name, *, pre=False, guess_makedepends=(), _version=""):
                          "package_url": url,
                          **metadata},
                 "urls": [{"packagetype": "sdist",
-                          "path": urllib.parse.urlparse(name).path,
+                          "path": parsed.path,
                           "url": name,
-                          "md5_digest": "SKIP"}],
-                "_pkgname_suffix": "-git"}
-    else:
+                          "md5_digest": "SKIP"}]}
+
+    def _get_info_local():
+        if not parsed.scheme == "file":
+            return
+        metadata = _get_metadata(
+            name, _guess_url_makedepends(name, guess_makedepends).pypi_names)
+        return {"info": {"download_url": name,
+                         "home_page": name,
+                         "package_url": name,
+                         **metadata},
+                "urls": [{"packagetype":
+                              "bdist_wheel" if parsed.path.endswith(".whl")
+                              else "sdist",
+                          "path": parsed.path,
+                          "url": name,
+                          "md5_digest": "SKIP"}]}
+
+    def _get_info_pypi():
         try:
             r = urllib.request.urlopen(
                 "https://pypi.python.org/pypi/{}/{}/json"
                 .format(name, _version))
         except urllib.error.HTTPError:
-            raise PackagingError(
-                "Package {} {} not found.".format(name, _version))
+            return
         # Load as OrderedDict so that always the same sdist is chosen if e.g.
         # both zip and tgz are available.
         request = json.loads(r.read().decode(r.headers.get_param("charset")),
@@ -453,9 +487,16 @@ def _get_pypi_info(name, *, pre=False, guess_makedepends=(), _version=""):
                     "use --pre to use the latest one.")
             max_version = str(max(version for version in versions))
             if max_version != request["info"]["version"]:
-                return _get_pypi_info(name, pre=pre, _version=max_version)
-        request["_pkgname_suffix"] = ""
+                return _get_info(name, pre=pre, _version=max_version)
         return request
+
+    for source in _sources:
+        info = locals()["_get_info_{}".format(source)]()
+        if info:
+            return info
+    else:
+        raise PackagingError("Package {} not found.".format(
+            " ".join(filter(None, [name, _version]))))
 
 
 def _get_site_packages_location():
@@ -528,7 +569,7 @@ class PackageRef:
         # If `subpkg_of` is set, do not attempt to use the Arch Linux name,
         # and name the package python--$pkgname to prevent collision.
         self.orig_name = name  # A name or an URL.
-        self.info = _get_pypi_info(
+        self.info = _get_info(
             name, pre=pre, guess_makedepends=guess_makedepends)
         self.pypi_name = self.info["info"]["name"] # Name on PyPI.
 
@@ -561,7 +602,8 @@ class PackageRef:
             format(pkgname), stdout=PIPE, check=False).stdout.splitlines()
 
         # Final values.
-        self.pkgname = pkgname + self.info["_pkgname_suffix"]
+        self.pkgname = (
+            "{}-git" if name.startswith("git+") else "{}").format(pkgname)
         # Packages that depend on a vendored package should list the
         # metapackage (which may be otherwise unrelated) as a dependency, so
         # that the metapackage can get updated into an official package without
@@ -612,7 +654,7 @@ class _BasePackage(ABC):
         for fname, content in self._files.items():
             (cwd / fname).write_bytes(content)
         if isinstance(self, Package):
-            srctree = _get_url_packed_path(self._get_preferred_url())
+            srctree = _get_url_packed_path(self._get_pip_url())
             dest = cwd / srctree.name
             with suppress(FileNotFoundError):
                 if dest.is_dir():
@@ -767,20 +809,22 @@ class Package(_BasePackage):
         return self._urls[0]["packagetype"]
 
     def _get_sdist_url(self):
-        return (self._ref.orig_name if self._ref.orig_name.startswith("git+")
+        parsed = urllib.parse.urlparse(self._ref.orig_name)
+        return (self._ref.orig_name
+                if re.match(r"\A(git\+|file\Z)", parsed.scheme)
                 else "pip-nobinary://{}".format(self._ref.pypi_name))
 
-    def _get_preferred_url(self):
-        return (self._ref.orig_name if self._ref.orig_name.startswith("git+")
+    def _get_pip_url(self):
+        parsed = urllib.parse.urlparse(self._ref.orig_name)
+        return (self._ref.orig_name
+                if re.match(r"\A(git\+|file\Z)", parsed.scheme)
                 else "pip://{}".format(self._ref.pypi_name))
 
     def _find_arch_makedepends(self, options):
-        self._arch = ["any"]
-        archs = sorted(
-            {PLATFORM_TAGS[WheelInfo.parse(url["path"]).platform]
-             for url in self._urls if url["packagetype"] == "bdist_wheel"})
         if self._get_first_package_type() == "bdist_wheel":
-            self._arch = archs
+            self._arch = sorted(
+                {PLATFORM_TAGS[WheelInfo.parse(url["path"]).platform]
+                 for url in self._urls if url["packagetype"] == "bdist_wheel"})
             self._makedepends = DependsTuple(
                 map(PackageRef, ["pip", *options.setup_requires]))
         else:
@@ -818,13 +862,13 @@ class Package(_BasePackage):
         _license_found = False
         if any(license not in TROVE_COMMON_LICENSES for license in licenses):
             for url in [info["download_url"], info["home_page"]]:
-                parse = urllib.parse.urlparse(url or "")  # Could be None.
-                if len(Path(parse.path).parts) != 3:  # ["/", user, name]
+                parsed = urllib.parse.urlparse(url or "")  # Could be None.
+                if len(Path(parsed.path).parts) != 3:  # ["/", user, name]
                     continue
-                if parse.netloc in ["github.com", "www.github.com"]:
-                    url = urllib.parse.urlunparse(parse._replace(
+                if parsed.netloc in ["github.com", "www.github.com"]:
+                    url = urllib.parsed.urlunparsed(parsed._replace(
                         netloc="raw.githubusercontent.com"))
-                elif parse.netloc in ["bitbucket.org", "www.bitbucket.org"]:
+                elif parsed.netloc in ["bitbucket.org", "www.bitbucket.org"]:
                     url += "/raw"
                 else:
                     continue
