@@ -446,7 +446,11 @@ def _get_pypi_info(name, *, pre=False, guess_makedepends=(), _version=""):
                 (version_parse(release) for release in request["releases"])
                 if not (not pre and version.is_prerelease)]
             if not versions:
-                raise PackagingError("No suitable release found.")
+                raise PackagingError(
+                    "No suitable release found."
+                    if not request["releases"] else
+                    "No suitable release found.  Pre-releases are available, "
+                    "use --pre to use the latest one.")
             max_version = str(max(version for version in versions))
             if max_version != request["info"]["version"]:
                 return _get_pypi_info(name, pre=pre, _version=max_version)
