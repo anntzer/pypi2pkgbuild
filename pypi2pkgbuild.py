@@ -284,8 +284,8 @@ class WheelInfo(
         return cls(name, version, build, python, abi, platform)
 
 
-def to_wheel_name(pypi_name):
-    return pypi_name.replace("-", "_")
+def to_wheel_name(pypi_normed_name):
+    return pypi_normed_name.replace("-", "_")
 
 
 class PackagingError(Exception):
@@ -432,7 +432,8 @@ def _get_info(name, *,
             raise PackagingError(
                 "No support for packaging specific revisions.")
         metadata = _get_metadata(
-            name, _guess_url_makedepends(name, guess_makedepends).pypi_names)
+            name,
+            _guess_url_makedepends(name, guess_makedepends).pypi_normed_names)
         try:  # Normalize the name if available on PyPI.
             metadata["name"] = _get_info(
                 metadata["name"], _sources=("pypi",))["info"]["name"]
@@ -451,7 +452,8 @@ def _get_info(name, *,
         if not parsed.scheme == "file":
             return
         metadata = _get_metadata(
-            name, _guess_url_makedepends(name, guess_makedepends).pypi_names)
+            name,
+            _guess_url_makedepends(name, guess_makedepends).pypi_normed_names)
         return {"info": {"download_url": name,
                          "home_page": name,
                          "package_url": name,
@@ -512,15 +514,16 @@ def _get_site_packages_location():
 #     `.{dist,egg}-info`.
 
 
-def _find_installed_name_version(pypi_name, *, ignore_vendored=False):
+def _find_installed_name_version(pypi_normed_name, *, ignore_vendored=False):
     parts = (
         _run_shell(
             "(shopt -s nocaseglob; pacman -Qo {}/{}-*-info 2>/dev/null) "
             "| rev | cut -d' ' -f1,2 | rev".format(
-                _get_site_packages_location(), pypi_name.replace("-", "_")),
+                _get_site_packages_location(),
+                to_wheel_name(pypi_normed_name)),
             stdout=PIPE).stdout[:-1].split()
         or _run_shell(
-            "pacman -Q python-{} 2>/dev/null".format(pypi_name.lower()),
+            "pacman -Q python-{} 2>/dev/null".format(pypi_normed_name),
             stdout=PIPE, check=False).stdout[:-1].split())
     if parts:
         pkgname, version = parts  # This will raise if there is an ambiguity.
@@ -544,11 +547,11 @@ def _find_installed_name_version(pypi_name, *, ignore_vendored=False):
         return
 
 
-def _find_arch_name_version(pypi_name):
+def _find_arch_name_version(pypi_normed_name):
     parts = _run_shell(
         r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
         "| cut -f1 | uniq | cut -d/ -f2".format(
-            to_wheel_name(pypi_name), sys.version_info),
+            to_wheel_name(pypi_normed_name), sys.version_info),
         stdout=PIPE).stdout[:-1].split()
     if parts:
         pkgname, version = parts
@@ -571,10 +574,15 @@ class PackageRef:
         self.orig_name = name  # A name or an URL.
         self.info = _get_info(
             name, pre=pre, guess_makedepends=guess_makedepends)
-        self.pypi_name = self.info["info"]["name"] # Name on PyPI.
+        # pacman -Slq | grep '^python-' | cut -d- -f 2- |
+        #     grep -v '^\([[:alnum:]]\)*$' | grep '_'
+        # (or '\.', or '-') shows that PEP503 normalization is by far the most
+        # common.
+        self.pypi_normed_name = distlib_normalize_name(
+            self.info["info"]["name"])
 
         if subpkg_of:
-            pkgname = "python--{}".format(self.pypi_name.lower())
+            pkgname = "python--{}".format(self.pypi_normed_name)
             depname = subpkg_of.pkgname
             arch_version = None
 
@@ -590,9 +598,9 @@ class PackageRef:
             # dependencies.
 
             installed = _find_installed_name_version(
-                self.pypi_name, ignore_vendored=True)
-            arch = _find_arch_name_version(self.pypi_name)
-            default = "python-{}".format(self.pypi_name.lower()), None
+                self.pypi_normed_name, ignore_vendored=True)
+            arch = _find_arch_name_version(self.pypi_normed_name)
+            default = "python-{}".format(self.pypi_normed_name), None
             pkgname, arch_version = installed or arch or default
             depname, _ = arch or installed or default
 
@@ -620,9 +628,9 @@ class PackageRef:
 
 class DependsTuple(tuple):  # Keep it hashable.
     @property
-    def pypi_names(self):
+    def pypi_normed_names(self):
         # Needs to be hashable.
-        return tuple(ref.pypi_name for ref in self
+        return tuple(ref.pypi_normed_name for ref in self
                      if isinstance(ref, PackageRef))
 
     def __format__(self, fmt):
@@ -732,8 +740,7 @@ class Package(_BasePackage):
 
         LOGGER.info("Packaging %s %s.",
                     self.pkgname, ref.info["info"]["version"])
-        self._urls = self._filter_and_sort_urls(
-            ref.info["urls"], options.pkgtypes)
+        self._urls = self._filter_and_sort_urls( ref.info["urls"], options.pkgtypes)
         if not self._urls:
             raise PackagingError(
                 "No URL available for package {}.".format(self.pkgname))
@@ -744,8 +751,15 @@ class Package(_BasePackage):
             _run_shell("if ! pacman -Q {0} >/dev/null 2>&1; then "
                        "sudo pacman -S --asdeps {0}; fi"
                        .format(nonpy_dep.pkgname), verbose=True)
-        metadata = _get_metadata(ref.orig_name, self._makedepends.pypi_names)
-        self._depends = self._find_depends(metadata)
+        metadata = _get_metadata(
+            ref.orig_name, self._makedepends.pypi_normed_names)
+        self._depends = DependsTuple(
+            PackageRef(req)
+            if options.build_deps else
+            # FIXME Could use something slightly better, i.e. still check local
+            # packages...
+            NonPyPackageRef("python-{}".format(distlib_normalize_name(req)))
+            for req in metadata["requires"])
         self._licenses = self._find_license()
 
         stream.write(PKGBUILD_HEADER.format(pkg=self, config=config))
@@ -792,9 +806,10 @@ class Package(_BasePackage):
                 else:
                     # PyPI currently allows uploading of packages with local
                     # version identifiers, see pypa/pypi-legacy#486.
-                    if (wheel_info.name != to_wheel_name(self._ref.pypi_name)
-                            or wheel_info.version
-                               != self._ref.info["info"]["version"]):
+                    if (wheel_info.name
+                            != to_wheel_name(self._ref.pypi_normed_name)
+                        or wheel_info.version
+                            != self._ref.info["info"]["version"]):
                         LOGGER.warning("Unexpected wheel info: %s", wheel_info)
                     else:
                         urls.append((url, order))
@@ -812,13 +827,13 @@ class Package(_BasePackage):
         parsed = urllib.parse.urlparse(self._ref.orig_name)
         return (self._ref.orig_name
                 if re.match(r"\A(git\+|file\Z)", parsed.scheme)
-                else "pip-nobinary://{}".format(self._ref.pypi_name))
+                else "pip-nobinary://{}".format(self._ref.pypi_normed_name))
 
     def _get_pip_url(self):
         parsed = urllib.parse.urlparse(self._ref.orig_name)
         return (self._ref.orig_name
                 if re.match(r"\A(git\+|file\Z)", parsed.scheme)
-                else "pip://{}".format(self._ref.pypi_name))
+                else "pip://{}".format(self._ref.pypi_normed_name))
 
     def _find_arch_makedepends(self, options):
         if self._get_first_package_type() == "bdist_wheel":
@@ -833,9 +848,6 @@ class Package(_BasePackage):
                 *map(PackageRef, options.setup_requires),
                 *_guess_url_makedepends(
                     self._get_sdist_url(), options.guess_makedepends)))
-
-    def _find_depends(self, metadata):
-        return DependsTuple(map(PackageRef, metadata["requires"]))
 
     def _find_license(self):
         info = self._ref.info["info"]
@@ -866,7 +878,7 @@ class Package(_BasePackage):
                 if len(Path(parsed.path).parts) != 3:  # ["/", user, name]
                     continue
                 if parsed.netloc in ["github.com", "www.github.com"]:
-                    url = urllib.parsed.urlunparsed(parsed._replace(
+                    url = urllib.parse.urlunparse(parsed._replace(
                         netloc="raw.githubusercontent.com"))
                 elif parsed.netloc in ["bitbucket.org", "www.bitbucket.org"]:
                     url += "/raw"
@@ -935,7 +947,7 @@ class Package(_BasePackage):
         if self._ref.pkgname.startswith("python--"):
             return ""
         try:
-            name, version = _find_arch_name_version(self._ref.pypi_name)
+            name, version = _find_arch_name_version(self._ref.pypi_normed_name)
         except TypeError:  # name, version = None
             return ""
         else:
@@ -945,7 +957,8 @@ class Package(_BasePackage):
         for ref in self._depends:
             if not ref.exists:
                 # Dependency not found, build it too.
-                create_package(ref.pypi_name, options._replace(is_dep=True))
+                create_package(ref.pypi_normed_name,
+                               options._replace(is_dep=True))
 
 
 class MetaPackage(_BasePackage):
@@ -1038,7 +1051,7 @@ def get_config():
 @lru_cache()
 def create_package(name, options):
     pkg = dispatch_package_builder(name, get_config(), options)
-    if not options.nodeps:
+    if options.build_deps:
         pkg.write_deps_to(options)
     pkg.write_to(options)
 
@@ -1081,7 +1094,7 @@ def find_outdated():
 
 Options = namedtuple(
     "Options", "base_path force pre pkgrel guess_makedepends setup_requires "
-               "pkgtypes nodeps makepkg is_dep")
+               "pkgtypes build_deps makepkg is_dep")
 _description = """\
 Create a PKGBUILD for a PyPI package and run makepkg.
 """
@@ -1140,7 +1153,8 @@ def main():
         type=_comma_separated_arg,
         help="Comma-separated preference order for dists.")
     parser.add_argument(
-        "-d", "--nodeps", action="store_true",
+        "-d", "--nodeps", action="store_false",
+        dest="build_deps", default=True,
         help="Don't generate PKGBUILD for dependencies.")
     parser.add_argument(
         "-m", "--makepkg", metavar="MAKEPKG_OPTS",
@@ -1207,7 +1221,7 @@ def main():
     cmd = ""
     if Package.build_cache:
         cmd += "pacman -U{} {}".format(
-            "dd" if args.nodeps else "",
+            "" if args.build_deps else "dd",
             " ".join(
                 str(fpath) for fpath, is_dep in Package.build_cache.values()))
         deps = [name for name, (fpath, is_dep) in Package.build_cache.items()
