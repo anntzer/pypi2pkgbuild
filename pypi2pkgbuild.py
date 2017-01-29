@@ -120,7 +120,7 @@ depends=(python {pkg.depends:{pkg.__class__.__name__}})
 makedepends=({pkg.makedepends:{pkg.__class__.__name__}})
 checkdepends=({pkg.checkdepends:{pkg.__class__.__name__}})
 provides=({pkg.provides})
-conflicts=("${{provides%=*}}")
+conflicts=(${{provides%=*}})  # No quotes, to avoid an empty entry.
 """
 
 SDIST_SOURCE = """\
