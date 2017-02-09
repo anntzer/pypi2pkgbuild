@@ -14,6 +14,7 @@ from io import StringIO
 from itertools import repeat
 import json
 import logging
+import os
 from pathlib import Path
 import re
 import shlex
@@ -241,6 +242,7 @@ def _run_shell(args, **kwargs):
     log at `INFO` level.
     """
     kwargs = {"shell": isinstance(args, str),
+              "env": {**os.environ, "PIP_CONFIG_FILE": "/dev/null"},
               "check": True,
               "universal_newlines": True,
               **kwargs}

@@ -100,6 +100,11 @@ dependencies are actually present), or by passing the `-d` flag ("do not
 build dependencies"); if it is used, the Arch package may not use the correct
 dependency names (if they are not of the form `python-pep503-normalized-name`).
 
+- By default, `pypi2pkgbuild.py` ignores `pip` config files such as
+`~/.config/pip/pip.conf`.  An explicitly set `PIP_CONFIG_FILE` will be
+respected, but may cause `pypi2pkgbuild.py` to fail as some `pip` calls will be
+unexpectedly modified.
+
 ## Build-time dependencies of packages
 
 `pypi2pkgbuild.py` attempts to guess whether `Cython` and `SWIG` are build-time
