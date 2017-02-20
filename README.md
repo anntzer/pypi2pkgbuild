@@ -105,6 +105,9 @@ dependency names (if they are not of the form `python-pep503-normalized-name`).
 respected, but may cause `pypi2pkgbuild.py` to fail as some `pip` calls will be
 unexpectedly modified.
 
+Likewise, user-site packages are ignored unless `PYTHONNOUSERSITE` is
+explicitly set to an empty value.
+
 ## Build-time dependencies of packages
 
 `pypi2pkgbuild.py` attempts to guess whether `Cython` and `SWIG` are build-time

@@ -242,7 +242,9 @@ def _run_shell(args, **kwargs):
     log at `INFO` level.
     """
     kwargs = {"shell": isinstance(args, str),
-              "env": {**os.environ, "PIP_CONFIG_FILE": "/dev/null"},
+              "env": {**os.environ,
+                      "PYTHONNOUSERSITE": "1",
+                      "PIP_CONFIG_FILE": "/dev/null"},
               "check": True,
               "universal_newlines": True,
               **kwargs}
@@ -363,9 +365,11 @@ def _get_metadata(name, setup_requires):
             NamedTemporaryFile("r") as more_requires_log, \
             NamedTemporaryFile("r") as log:
         script = textwrap.dedent(r"""
+        set -e
         python -mvenv {venvdir}
+        # Don't stay in the source folder, which may contain wheels/sdists/etc.
+        cd {venvdir}
         . '{venvdir}/bin/activate'
-        export PIP_CONFIG_FILE=/dev/null
         pip install --upgrade {setup_requires} >/dev/null
         install_cmd() {{
             pip freeze | cut -d= -f1 >'{venvdir}/pre_install_list'
@@ -1132,7 +1136,7 @@ def main():
         "-f", "--force", action="store_true",
         help="Overwrite a previously existing PKGBUILD.")
     parser.add_argument(
-        "-p", "--pre", action="store_true",
+        "--pre", action="store_true",
         help="Include pre-releases.")
     parser.add_argument(
         "-r", "--pkgrel", default="00",
@@ -1161,7 +1165,11 @@ def main():
     parser.add_argument(
         "-m", "--makepkg", metavar="MAKEPKG_OPTS",
         default="--cleanbuild --nodeps",
-        help="Additional arguments to pass to makepkg.")
+        help="Additional arguments to pass to `makepkg`.")
+    parser.add_argument(
+        "-p", "--pacman", metavar="PACMAN_OPTS",
+        default="",
+        help="Additional arguments to pass to `pacman -U`.")
     args = parser.parse_args()
     log_level = logging.DEBUG if vars(args).pop("verbose") else logging.INFO
     logging.basicConfig(level=log_level)
@@ -1185,8 +1193,8 @@ def main():
         # "error: No repo files found. Please run `pkgfile --update'."
         sys.exit(1)
 
-    outdated, update, ignore = map(
-        vars(args).pop, ["outdated", "update", "ignore"])
+    outdated, update, ignore, pacman_opts = map(
+        vars(args).pop, ["outdated", "update", "ignore", "pacman"])
 
     if outdated:
         if vars(args).pop("names"):
@@ -1222,8 +1230,9 @@ def main():
 
     cmd = ""
     if Package.build_cache:
-        cmd += "pacman -U{} {}".format(
+        cmd += "pacman -U{} {} {}".format(
             "" if args.build_deps else "dd",
+            pacman_opts,
             " ".join(
                 str(fpath) for fpath, is_dep in Package.build_cache.values()))
         deps = [name for name, (fpath, is_dep) in Package.build_cache.items()

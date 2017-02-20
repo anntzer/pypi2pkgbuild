@@ -54,5 +54,8 @@ Mispackaged packages
     - `graphviz`
 
 - Undetected split packages:
-    - Arch splits `pygments` into `python-pygments` and `pygmentize`, but
-      `pypi2pkgbuild.py` only sees the former.
+    - Arch splits `pygments` into `python-pygments` and `pygmentize`,
+      but `pypi2pkgbuild.py` only sees the former (and thus does not
+      provides/conflicts the latter).  `pkgbase` could be read out of
+      `.PKGINFO`, but does pacman provide a way to find packages given a
+      `pkgbase`?
