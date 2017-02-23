@@ -1159,13 +1159,17 @@ def main():
         type=_comma_separated_arg,
         help="Comma-separated preference order for dists.")
     parser.add_argument(
-        "-d", "--nodeps", action="store_false",
+        "-d", "--no-deps", action="store_false",
         dest="build_deps", default=True,
         help="Don't generate PKGBUILD for dependencies.")
     parser.add_argument(
         "-m", "--makepkg", metavar="MAKEPKG_OPTS",
         default="--cleanbuild --nodeps",
         help="Additional arguments to pass to `makepkg`.")
+    parser.add_argument(
+        "-n", "--no-install", action="store_false",
+        dest="install", default="True",
+        help="Don't install the built packages.")
     parser.add_argument(
         "-p", "--pacman", metavar="PACMAN_OPTS",
         default="",
@@ -1193,8 +1197,8 @@ def main():
         # "error: No repo files found. Please run `pkgfile --update'."
         sys.exit(1)
 
-    outdated, update, ignore, pacman_opts = map(
-        vars(args).pop, ["outdated", "update", "ignore", "pacman"])
+    outdated, update, ignore, install, pacman_opts = map(
+        vars(args).pop, ["outdated", "update", "ignore", "install", "pacman"])
 
     if outdated:
         if vars(args).pop("names"):
@@ -1229,7 +1233,7 @@ def main():
             return 1
 
     cmd = ""
-    if Package.build_cache:
+    if install and Package.build_cache:
         cmd += "pacman -U{} {} {}".format(
             "" if args.build_deps else "dd",
             pacman_opts,
