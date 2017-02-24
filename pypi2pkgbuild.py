@@ -693,6 +693,7 @@ class _BasePackage(ABC):
 
         fullpath = _get_fullpath()
         # Update PKGBUILD.
+        needs_rebuild = False
         namcap = (_run_shell(["namcap", fullpath.name], cwd=cwd, stdout=PIPE)
                   .stdout.splitlines())
         # `pkgver()` may update the PKGBUILD, so reread it.
@@ -706,18 +707,22 @@ class _BasePackage(ABC):
         pkgbuild_contents = pkgbuild_contents.replace(
             "## EXTRA_DEPENDS ##",
             "depends+=({})".format(" ".join(extra_deps)))
+        if extra_deps:
+            needs_rebuild = True
         # Unexpected arch-dependent package (e.g. direct compilation of C
         # source).
         any_arch_re = "E: ELF file .* found in an 'any' package."
         if any(re.search(any_arch_re, line) for line in namcap):
             pkgbuild_contents = pkgbuild_contents.replace(
                 "arch=(any)", "arch=({})".format(THIS_ARCH))
-        # Remove previous package, repackage, and get new name (arch may have
-        # changed).
-        fullpath.unlink()
-        (cwd / "PKGBUILD").write_text(pkgbuild_contents)
-        _run_shell("makepkg --force --repackage --nodeps", cwd=cwd)
-        fullpath = _get_fullpath()
+            needs_rebuild = True
+        if needs_rebuild:
+            # Remove previous package, repackage, and get new name (arch may
+            # have changed).
+            fullpath.unlink()
+            (cwd / "PKGBUILD").write_text(pkgbuild_contents)
+            _run_shell("makepkg --force --repackage --nodeps", cwd=cwd)
+            fullpath = _get_fullpath()
         # Python dependencies always get misanalyzed so we just filter them
         # away.  Extension modules unconditionally link to `libpthread` (see
         # output of `python-config --libs`) so filter that away too.  It would
