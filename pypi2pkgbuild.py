@@ -40,9 +40,8 @@ PLATFORM_TAGS = {
     "any": "any", "manylinux1_i686": "i686", "manylinux1_x86_64": "x86_64"}
 THIS_ARCH = ["i686", "x86_64"][sys.maxsize > 2 ** 32]
 SDIST_SUFFIXES = [".tar.gz", ".tgz", ".tar.bz2", ".zip"]
-LICENSE_NAMES = [
-    "LICENSE", "LICENSE.txt", "LICENCE", "LICENCE.txt", "license.txt",
-    "COPYING.rst", "COPYING.txt", "COPYRIGHT"]
+LICENSE_NAMES = ["LICENSE", "LICENSE.txt", "license.txt",
+                 "COPYING.rst", "COPYING.txt", "COPYRIGHT"]
 TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
     "GNU Affero General Public License v3":
         "AGPL3",
@@ -888,17 +887,22 @@ class Package(_BasePackage):
                 parsed = urllib.parse.urlparse(url or "")  # Could be None.
                 if len(Path(parsed.path).parts) != 3:  # ["/", user, name]
                     continue
+                # Strip final slash for later manipulations.
+                parsed = parsed._replace(path=re.sub("/$", "", parsed.path))
                 if parsed.netloc in ["github.com", "www.github.com"]:
-                    url = urllib.parse.urlunparse(parsed._replace(
-                        netloc="raw.githubusercontent.com"))
+                    parsed = parsed._replace(
+                        netloc="raw.githubusercontent.com")
                 elif parsed.netloc in ["bitbucket.org", "www.bitbucket.org"]:
-                    url += "/raw"
+                    parsed = parsed._replace(
+                        path=parsed.path + "/raw")
                 else:
                     continue
                 for license_name in LICENSE_NAMES:
                     try:
                         r = urllib.request.urlopen(
-                            url + "/master/" + license_name)
+                            urllib.parse.urlunparse(
+                                parsed._replace(path=parsed.path + "/master/"
+                                                     + license_name)))
                     except urllib.error.HTTPError:
                         pass
                     else:
