@@ -662,7 +662,7 @@ class _BasePackage(ABC):
     def write_to(self, options):
         cwd = options.base_path / self.pkgname
         cwd.mkdir(parents=True, exist_ok=options.force)
-        (cwd / "PKGBUILD_EXTRAS").open("a").close()
+        (cwd / "PKGBUILD_EXTRAS").write_text(options.pkgbuild_extras)
         (cwd / "PKGBUILD").write_text(self._pkgbuild)
         for fname, content in self._files.items():
             (cwd / fname).write_bytes(content)
@@ -1109,7 +1109,7 @@ def find_outdated():
 
 Options = namedtuple(
     "Options", "base_path force pre pkgrel guess_makedepends setup_requires "
-               "pkgtypes build_deps makepkg is_dep")
+               "pkgtypes build_deps pkgbuild_extras makepkg is_dep")
 _description = """\
 Create a PKGBUILD for a PyPI package and run makepkg.
 """
@@ -1171,6 +1171,9 @@ def main():
         "-d", "--no-deps", action="store_false",
         dest="build_deps", default=True,
         help="Don't generate PKGBUILD for dependencies.")
+    parser.add_argument(
+        "-e", "--pkgbuild-extras", default="",
+        help="Contents of PKGBUILD_EXTRAS.")
     parser.add_argument(
         "-m", "--makepkg", metavar="MAKEPKG_OPTS",
         default="--cleanbuild --nodeps",

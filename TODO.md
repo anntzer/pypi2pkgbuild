@@ -34,24 +34,28 @@ Arch packaging
 Mispackaged packages
 ====================
 
-- Setup-time dependencies (set `--setup-requires` correctly to work around):
+- Setup-time dependencies (use `--setup-requires=...` as a workaround):
     - `pomegranate` (Cython files depend on scipy's BLAS `pxd`s.)
 
-- `extras_requires` (see above):
-    - `scikit-image` (The AUR package doesn't even declare `dask` as a
-      dependency.)
+- Missing dependencies (use `--pkgbuild-extras='depends+=(...)'` as a
+  workaround):
 
-- Undeclared dependencies:
-    - `hmmlearn`
-    - `memory_profiler` ("Strongly recommends" `psutil`.)
-    - `sphinx-gallery` (Could fetch `requirements.txt` from Github.)
-    - `supersmoother`
+    - `extras_requires` (see above):
+        - `scikit-image` (The AUR package doesn't even declare `dask` as a
+        dependency.)
 
-- `ctypes`-loaded binary dependencies:
-    - `yep` (Depends on `gperftools`.)
+    - Undeclared dependencies:
+        - `hmmlearn`
+        - `memory_profiler` ("Strongly recommends" `psutil`.)
+        - `sphinx-gallery` (Could fetch `requirements.txt` from Github.)
+        - `supersmoother`
 
-- Wrappers for binaries:
-    - `graphviz`
+    - `ctypes`-loaded binary dependencies:
+        - `pylibftdi` (Depends on `libftdi`.)
+        - `yep` (Depends on `gperftools`.)
+
+    - Wrappers for binaries:
+        - `graphviz`
 
 - Undetected split packages:
     - Arch splits `pygments` into `python-pygments` and `pygmentize`,
