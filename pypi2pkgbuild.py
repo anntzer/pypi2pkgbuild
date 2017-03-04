@@ -1079,9 +1079,11 @@ def find_outdated():
     # supporting only pip 9 instead).
     lines = (_run_shell("pip list --outdated 2>/dev/null", stdout=PIPE)
              .stdout.splitlines())
+    if not lines:
+        return {}
     names = [line.split()[0] for line in lines]
     # `pip show` is rather slow, so just call it once.
-    locs = _run_shell("pip show {} 2>/dev/null "  # Silence error if no names.
+    locs = _run_shell("pip show {} 2>/dev/null "
                       "| grep -Po '(?<=^Location: ).*'".
                       format(" ".join(names)), stdout=PIPE).stdout.splitlines()
     owners = {}
