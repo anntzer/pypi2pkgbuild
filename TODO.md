@@ -1,6 +1,12 @@
 Issues
 ======
 
+- Packages that are manually vendored (... poorly) by Arch (e.g., `html5lib`
+  into `bleach`) cause some issues.  A solution would be to actually install
+  the dependencies, check whether the last versions were installed, and error
+  if this is not the case (indicating a requirement on an earlier version,
+  which necessarily means manual vendoring).
+
 - VCS fragments cannot be given.
 
 - PyPI packages that depends on another package's `extra_requires` are not

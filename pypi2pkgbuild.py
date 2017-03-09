@@ -553,17 +553,19 @@ def _find_installed_name_version(pypi_normed_name, *, ignore_vendored=False):
 
 
 def _find_arch_name_version(pypi_normed_name):
-    parts = _run_shell(
-        r"pkgfile -riv '/{0}-.*py{1.major}\.{1.minor}\.egg-info' "
-        "| cut -f1 | uniq | cut -d/ -f2".format(
-            to_wheel_name(pypi_normed_name), sys.version_info),
-        stdout=PIPE).stdout[:-1].split()
-    if parts:
-        pkgname, version = parts
-        arch_version = ArchVersion.parse(version)
-        return pkgname, arch_version
-    else:
-        return
+    for standalone in [True, False]:  # vendored into another Python package?
+        parts = _run_shell(
+            "pkgfile -riv '{parent}/{wheel_name}"
+                         r"-.*py{version.major}\.{version.minor}\.egg-info' "
+            "| cut -f1 | uniq | cut -d/ -f2".format(
+                parent="/site-packages" if standalone else "",
+                wheel_name=to_wheel_name(pypi_normed_name),
+                version=sys.version_info),
+            stdout=PIPE).stdout[:-1].split()
+        if parts:
+            pkgname, version = parts
+            arch_version = ArchVersion.parse(version)
+            return pkgname, arch_version
 
 
 class NonPyPackageRef:
@@ -611,7 +613,11 @@ class PackageRef:
 
         arch_packaged = _run_shell(
             "pkgfile -l {} 2>/dev/null"
-            r"| grep -Po '(?<=site-packages/)[^-]*(?=.*\.egg-info/?$)'".
+            # Package name has no dash (per packaging standard) nor slashes
+            # (which can occur when a subpackage is vendored (depending on how
+            # it is done), e.g. `.../foo.egg-info` and `.../foo/bar.egg-info`
+            # both existing).
+            r"| grep -Po '(?<=site-packages/)[^-/]*(?=.*\.egg-info/?$)'".
             format(pkgname), stdout=PIPE, check=False).stdout.splitlines()
 
         # Final values.
