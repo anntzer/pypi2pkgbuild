@@ -41,7 +41,8 @@ PLATFORM_TAGS = {
 THIS_ARCH = ["i686", "x86_64"][sys.maxsize > 2 ** 32]
 SDIST_SUFFIXES = [".tar.gz", ".tgz", ".tar.bz2", ".zip"]
 LICENSE_NAMES = ["LICENSE", "LICENSE.txt", "license.txt",
-                 "COPYING.rst", "COPYING.txt", "COPYRIGHT"]
+                 "COPYING.md", "COPYING.rst", "COPYING.txt",
+                 "COPYRIGHT"]
 TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
     "GNU Affero General Public License v3":
         "AGPL3",
@@ -322,11 +323,14 @@ def _get_url_packed_path(url):
 
 
 @lru_cache()
-def _get_url_unpacked_path(url):
+def _get_url_unpacked_path_or_null(url):
     parsed = urllib.parse.urlparse(url)
-    if parsed.path.endswith(".whl"):
-        return Path("/dev/null")  # Slight hack...
-    cache_dir, packed_path = _get_url_impl(url)
+    if parsed.scheme == "file" and parsed.path.endswith(".whl"):
+        return Path("/dev/null")
+    try:
+        cache_dir, packed_path = _get_url_impl(url)
+    except CalledProcessError:
+        return Path("/dev/null")
     if packed_path.is_file():  # pip://
         shutil.unpack_archive(str(packed_path), cache_dir.name)
     unpacked_path, = (
@@ -338,13 +342,12 @@ def _get_url_unpacked_path(url):
 def _guess_url_makedepends(url, guess_makedepends):
     parsed = urllib.parse.urlparse(url)
     makedepends = [PackageRef("pip")]
-    if not parsed.path.endswith(".whl"):
-        if ("swig" in guess_makedepends
-                and list(_get_url_unpacked_path(url).glob("**/*.i"))):
-            makedepends.append(NonPyPackageRef("swig"))
-        if ("cython" in guess_makedepends
-                and list(_get_url_unpacked_path(url).glob("**/*.pyx"))):
-            makedepends.append(PackageRef("Cython"))
+    if ("swig" in guess_makedepends
+            and list(_get_url_unpacked_path_or_null(url).glob("**/*.i"))):
+        makedepends.append(NonPyPackageRef("swig"))
+    if ("cython" in guess_makedepends
+            and list(_get_url_unpacked_path_or_null(url).glob("**/*.pyx"))):
+        makedepends.append(PackageRef("Cython"))
     return DependsTuple(makedepends)
 
 
@@ -401,8 +404,8 @@ def _get_metadata(name, setup_requires):
         """).format(
             venvdir=venvdir,
             setup_requires=" ".join(setup_requires),
-            req=(_get_url_unpacked_path(name) if name.startswith("git+")
-                 else name),
+            req=(_get_url_unpacked_path_or_null(name)
+                 if name.startswith("git+") else name),
             more_requires_log=more_requires_log,
             log=log)
         try:
@@ -918,9 +921,10 @@ class Package(_BasePackage):
                 if _license_found:
                     break
             else:
-                for path in (_get_url_unpacked_path(self._get_sdist_url())
-                             / license_name
-                             for license_name in LICENSE_NAMES):
+                for path in map(
+                        _get_url_unpacked_path_or_null(
+                            self._get_sdist_url()).joinpath,
+                        LICENSE_NAMES):
                     if path.is_file():
                         self._files.update(LICENSE=path.read_bytes())
                         break
