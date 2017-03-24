@@ -37,8 +37,8 @@ Arch packaging
   `PyQt5`) and thus not seen by `pip list --outdated` (and thus
   `pypi2pkgbuild.py -o`).
 
-Mispackaged packages
-====================
+Other mispackaged packages
+==========================
 
 - Setup-time dependencies (use `--setup-requires=...` as a workaround):
     - `pomegranate` (Cython files depend on scipy's BLAS `pxd`s.)

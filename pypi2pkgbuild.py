@@ -823,9 +823,12 @@ class Package(_BasePackage):
                 except (KeyError, ValueError):
                     continue
                 else:
-                    # PyPI currently allows uploading of packages with local
-                    # version identifiers, see pypa/pypi-legacy#486.
-                    if (wheel_info.name
+                    # - The wheel name seems to use the *non-lowercased* but
+                    #   otherwise normalized name.  Just lowercase it too for
+                    #   simplicity.
+                    # - PyPI currently allows uploading of packages with local
+                    #   version identifiers, see pypa/pypi-legacy#486.
+                    if (wheel_info.name.lower()
                             != to_wheel_name(self._ref.pypi_normed_name)
                         or wheel_info.version
                             != self._ref.info["info"]["version"]):
