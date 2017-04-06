@@ -538,7 +538,8 @@ def _find_installed_name_version(pypi_normed_name, *, ignore_vendored=False):
         if pkgname.endswith("-git"):
             expected_conflict = pkgname[:-len("-git")]
             if _run_shell(
-                    "pacman -Qi {} 2>/dev/null | grep 'Conflicts With *: {}$'"
+                    "pacman -Qi {} 2>/dev/null "
+                    "| grep -q 'Conflicts With *: {}$'"
                     .format(pkgname, expected_conflict),
                     check=False).returncode == 0:
                 pkgname = pkgname[:-len("-git")]
