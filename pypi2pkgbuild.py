@@ -721,8 +721,11 @@ class _BasePackage(ABC):
         # source).
         any_arch_re = "E: ELF file .* found in an 'any' package."
         if any(re.search(any_arch_re, line) for line in namcap):
-            pkgbuild_contents = pkgbuild_contents.replace(
-                "arch=(any)", "arch=({})".format(THIS_ARCH))
+            pkgbuild_contents = re.sub(
+                "(?m)^arch=.*$",
+                "arch=({})".format(THIS_ARCH),
+                pkgbuild_contents,
+                1)
             needs_rebuild = True
         if needs_rebuild:
             # Remove previous package, repackage, and get new name (arch may
@@ -1000,10 +1003,11 @@ class MetaPackage(_BasePackage):
         self._subpkgs = [
             Package(ref, config, options) for ref in self._subpkgrefs]
         for pkg in self._subpkgs:
-            pkg._pkgbuild = pkg._pkgbuild.replace(
-                "conflicts=()",
+            pkg._pkgbuild = re.sub(
+                "(?m)^conflicts=.*$",
                 "conflicts=('{0}<{1}' '{0}>{1}')".format(
                     ref.pkgname, self._arch_version),
+                pkg._pkgbuild,
                 1)
         self._pkgbuild = (
             PKGBUILD_HEADER.format(pkg=self, config=config) +
