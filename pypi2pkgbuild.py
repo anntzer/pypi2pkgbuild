@@ -30,6 +30,14 @@ from pip._vendor.distlib.util import normalize_name as distlib_normalize_name
 from pip._vendor.packaging.version import parse as version_parse
 from pip.vcs import VersionControl
 
+try:
+    import _pypi2pkgbuild_version
+except ImportError:
+    from pip._vendor import pkg_resources
+    __version__ = pkg_resources.get_distribution("pypi2pkgbuild").version
+else:
+    __version__ = _pypi2pkgbuild_version.get_versions()["version"]
+
 
 LOGGER = logging.getLogger(Path(__file__).stem)
 
@@ -1141,6 +1149,8 @@ def main():
         description=_description,
         formatter_class=type("", (RawDescriptionHelpFormatter,
                                   ArgumentDefaultsHelpFormatter), {}))
+    parser.add_argument("--version", action="version",
+                        version="%(prog)s {}".format(__version__))
     parser.add_argument(
         "names", metavar="name", nargs="*",
         help="The PyPI package names.")
