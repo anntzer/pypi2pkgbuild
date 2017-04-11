@@ -4,7 +4,7 @@
 
 import abc
 from abc import ABC
-from argparse import (ArgumentParser, ArgumentDefaultsHelpFormatter,
+from argparse import (Action, ArgumentParser, ArgumentDefaultsHelpFormatter,
                       RawDescriptionHelpFormatter)
 from collections import namedtuple, OrderedDict
 from contextlib import suppress
@@ -1138,17 +1138,32 @@ def find_outdated():
 Options = namedtuple(
     "Options", "base_path force pre pkgrel guess_makedepends setup_requires "
                "pkgtypes build_deps pkgbuild_extras makepkg is_dep")
-_description = """\
-Create a PKGBUILD for a PyPI package and run makepkg.
-"""
 def main():
-    def _comma_separated_arg(s):
-        return tuple(s.split(",")) if s else ()  # Keep it hashable.
+
+    class CommaSeparatedList(Action):
+        def __init__(self, *args, **kwargs):
+            kwargs["default"] = (() if "default" not in kwargs
+                                 else tuple(kwargs["default"]))
+            super().__init__(*args, **kwargs)
+
+        def __call__(self, parser, namespace, values, option_string=None):
+            values = (getattr(namespace, self.dest)
+                      + (tuple(values.split(",")) if values else ()))
+            try:
+                idx = values.index("")
+            except ValueError:
+                pass
+            else:
+                values = values[idx + 1:]
+            setattr(namespace, self.dest, values)
 
     parser = ArgumentParser(
-        description=_description,
+        description="Create a PKGBUILD for a PyPI package and run makepkg.",
         formatter_class=type("", (RawDescriptionHelpFormatter,
-                                  ArgumentDefaultsHelpFormatter), {}))
+                                  ArgumentDefaultsHelpFormatter), {}),
+        epilog="Arguments documented as comma-separated lists can be passed "
+               "multiple times; an empty value can be used to strip out "
+               "values passed so far.")
     parser.add_argument("--version", action="version",
                         version="%(prog)s {}".format(__version__))
     parser.add_argument(
@@ -1164,9 +1179,7 @@ def main():
         "-u", "--update", action="store_true", default=False,
         help="Find and build outdated packages.")
     parser.add_argument(
-        "-i", "--ignore", metavar="NAME,...",
-        default="",
-        type=_comma_separated_arg,
+        "-i", "--ignore", metavar="NAME,...", action=CommaSeparatedList,
         help="Comma-separated list of packages not to be updated.")
     parser.add_argument(
         "-b", "--base-path", type=Path, default=Path(),
@@ -1183,19 +1196,17 @@ def main():
              "Set e.g. to 99 to override AUR packages.")
     parser.add_argument(
         "-g", "--guess-makedepends", metavar="MAKEDEPENDS,...",
-        default="cython,swig",
-        type=_comma_separated_arg,
+        action=CommaSeparatedList, default=["cython", "swig"],
         help="Comma-separated list of makedepends that will be guessed.  "
              "Allowed values: cython, swig.")
     parser.add_argument(
         "-s", "--setup-requires", metavar="PYPI_NAME,...",
-        default="",
-        type=_comma_separated_arg,
+        action=CommaSeparatedList,
         help="Comma-separated list of setup_requires that will be forced.")
     parser.add_argument(
         "-t", "--pkgtypes",
-        default="anywheel,sdist,manylinuxwheel",
-        type=_comma_separated_arg,
+        action=CommaSeparatedList,
+        default=["anywheel", "sdist", "manylinuxwheel"],
         help="Comma-separated preference order for dists.")
     parser.add_argument(
         "-d", "--no-deps", action="store_false",

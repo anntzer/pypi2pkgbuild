@@ -86,7 +86,9 @@ This function will not bypass Python packages explicitly installed from
 the AUR, as the user may have done so to bypass some incorrect packaging
 by `pypi2pkgbuild.py`.  It is recommended to use the `-i` flag to calls to
 `pypi2pkgbuild.py` (e.g. in an alias) to exclude packages that are mishandled
-by `pypi2pkgbuild.py` (see [TODO.md](TODO.md#mispackaged-packages)).
+by `pypi2pkgbuild.py` (see [TODO.md](TODO.md#mispackaged-packages)).  The `-i`
+flag can be passed multiple times; passing an empty argument to it will clear
+the ignore list defined so far.
 
 - In order to package a locally available git repository, use
 ```sh
