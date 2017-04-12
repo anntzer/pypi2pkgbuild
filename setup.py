@@ -8,6 +8,7 @@ if __name__ == "__main__":
         version=versioneer.get_version(),
         cmdclass=versioneer.get_cmdclass(),
         description="A PyPI to PKGBUILD converter.",
+        long_description=open("README.rst").read(),
         url="https://github.com/anntzer/pypi2pkgbuild",
         author="Antony Lee",
         license="BSD",
