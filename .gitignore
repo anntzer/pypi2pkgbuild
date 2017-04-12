@@ -1,5 +1,8 @@
-htmlcov/
+*.egg-info
 .cache/
+build/
+dist/
+htmlcov/
 .*.swp
 *.pyc
 .coverage
