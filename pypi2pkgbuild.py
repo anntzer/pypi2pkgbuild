@@ -312,11 +312,9 @@ def _get_url_impl(url):
         _run_shell(["git", "clone", "--recursive", url[4:]],
                     cwd=cache_dir.name)
     elif parsed.scheme == "pip":
-        _run_shell(["pip", "download", "--no-deps",
-                    "-d", cache_dir.name, parsed.netloc])
-    elif parsed.scheme == "pip-nobinary":
-        _run_shell(["pip", "download", "--no-binary=:all:", "--no-deps",
-                    "-d", cache_dir.name, parsed.netloc])
+        _run_shell(["pip", "download", "--no-deps", "-d", cache_dir.name,
+                    *(parsed.fragment.split() if parsed.fragment else []),
+                    parsed.netloc])
     else:
         Path(cache_dir.name, Path(parsed.path).name).write_bytes(
             urllib.request.urlopen(url).read())
@@ -771,7 +769,8 @@ class Package(_BasePackage):
 
         LOGGER.info("Packaging %s %s.",
                     self.pkgname, ref.info["info"]["version"])
-        self._urls = self._filter_and_sort_urls( ref.info["urls"], options.pkgtypes)
+        self._urls = self._filter_and_sort_urls(
+            ref.info["urls"], options.pkgtypes)
         if not self._urls:
             raise PackagingError(
                 "No URL available for package {}.".format(self.pkgname))
@@ -783,7 +782,10 @@ class Package(_BasePackage):
                        "sudo pacman -S --asdeps {0}; fi"
                        .format(nonpy_dep.pkgname), verbose=True)
         metadata = _get_metadata(
-            ref.orig_name, self._makedepends.pypi_normed_names)
+            "{}=={}".format(ref.orig_name, self.pkgver)
+            if urllib.parse.urlparse(ref.orig_name).scheme == ""
+            else ref.orig_name,
+            self._makedepends.pypi_normed_names)
         self._depends = DependsTuple(
             PackageRef(req)
             if options.build_deps else
@@ -861,13 +863,15 @@ class Package(_BasePackage):
         parsed = urllib.parse.urlparse(self._ref.orig_name)
         return (self._ref.orig_name
                 if re.match(r"\A(git\+|file\Z)", parsed.scheme)
-                else "pip-nobinary://{}".format(self._ref.pypi_normed_name))
+                else "pip://{}=={}#--no-binary=:all:".format(
+                    self._ref.pypi_normed_name, self.pkgver))
 
     def _get_pip_url(self):
         parsed = urllib.parse.urlparse(self._ref.orig_name)
         return (self._ref.orig_name
                 if re.match(r"\A(git\+|file\Z)", parsed.scheme)
-                else "pip://{}".format(self._ref.pypi_normed_name))
+                else "pip://{}=={}".format(
+                    self._ref.pypi_normed_name, self.pkgver))
 
     def _find_arch_makedepends(self, options):
         if self._get_first_package_type() == "bdist_wheel":
@@ -1008,7 +1012,8 @@ class MetaPackage(_BasePackage):
         self._arch_version = self._ref.arch_version._replace(
             pkgrel=self._ref.arch_version.pkgrel + ".99")
         self._subpkgrefs = DependsTuple(
-            PackageRef(name, subpkg_of=ref) for name in ref.arch_packaged)
+            PackageRef(name, subpkg_of=ref, pre=options.pre)
+            for name in ref.arch_packaged)
         self._subpkgs = [
             Package(ref, config, options) for ref in self._subpkgrefs]
         for pkg in self._subpkgs:
