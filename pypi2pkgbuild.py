@@ -1234,13 +1234,16 @@ def main():
         help="Additional arguments to pass to `pacman -U`.")
     args = parser.parse_args()
     log_level = logging.DEBUG if vars(args).pop("verbose") else logging.INFO
+    LOGGER.setLevel(log_level)
     logging.basicConfig(level=log_level)
     handler_level = logging.getLogger().handlers[0].level
     @LOGGER.addFilter
     def f(record):
         # This hack allows us to run with COLOREDLOGS_AUTO_INSTALL=1 without
         # having to set the root handler level to DEBUG (which would affect
-        # other packages as well).
+        # other packages as well).  We still need to set this package's logger
+        # level accordingly as otherwise DEBUG level records will not even
+        # reach this filter.
         if record.levelno >= log_level:
             record.levelno = max(handler_level, record.levelno)
         return True

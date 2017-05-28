@@ -43,7 +43,8 @@ to build a package is (reasonably) accessible, this tool should be able to
 build it.
 
 In order to provide additional information to ``makepkg``, edit
-``PKGBUILD_EXTRAS``, which is sourced at the *end* of ``PKGBUILD``.
+``PKGBUILD_EXTRAS`` (which can also be done with the ``--pkgbuild-extras``
+flag).  This file is sourced at the *end* of ``PKGBUILD``.
 
 Usage notes
 ```````````
@@ -131,7 +132,9 @@ attempting a build without ``numpy``, then, in case of failure, a build with
 ``numpy``.
 
 Additional Python build-time dependencies (i.e., ``setup_requires``) can be
-specified (as PyPI names) using the ``--setup-requires`` flag.
+specified (as PyPI names) using the ``--setup-requires`` flag.  For this
+purpose, do not use the ``--pkgbuild-extras`` flag to set the ``makedepends``
+array, as the dependencies will not be installed in the initial virtualenv.
 
 Vendored packages
 -----------------
