@@ -312,9 +312,15 @@ def _get_url_impl(url):
         _run_shell(["git", "clone", "--recursive", url[4:]],
                     cwd=cache_dir.name)
     elif parsed.scheme == "pip":
-        _run_shell(["pip", "download", "--no-deps", "-d", cache_dir.name,
-                    *(parsed.fragment.split() if parsed.fragment else []),
-                    parsed.netloc])
+        try:
+            _run_shell(["pip", "download", "--no-deps", "-d", cache_dir.name,
+                        *(parsed.fragment.split() if parsed.fragment else []),
+                        parsed.netloc])
+        except CalledProcessError:
+            # pypa/pip#1884: download can "fail" due to buggy setup.py (e.g.
+            # astropy 1.3.3).
+            raise PackagingError("Failed to download {}, possibly due to a "
+                                 "buggy setup.py".format(parsed.netloc))
     else:
         Path(cache_dir.name, Path(parsed.path).name).write_bytes(
             urllib.request.urlopen(url).read())
