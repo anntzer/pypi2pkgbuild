@@ -571,10 +571,11 @@ def _find_installed_name_version(pypi_normed_name, *, ignore_vendored=False):
 def _find_arch_name_version(pypi_normed_name):
     for standalone in [True, False]:  # vendored into another Python package?
         parts = _run_shell(
-            "pkgfile -riv '{parent}/{wheel_name}"
-                         r"-.*py{version.major}\.{version.minor}\.egg-info' "
+            "pkgfile -riv "
+            "'^/usr/lib/python{version.major}\.{version.minor}/{parent}"
+            r"{wheel_name}-.*py{version.major}\.{version.minor}\.egg-info' "
             "| cut -f1 | uniq | cut -d/ -f2".format(
-                parent="/site-packages" if standalone else "",
+                parent="site-packages/" if standalone else "",
                 wheel_name=to_wheel_name(pypi_normed_name),
                 version=sys.version_info),
             stdout=PIPE).stdout[:-1].split()
