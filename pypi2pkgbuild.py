@@ -395,7 +395,14 @@ def _get_metadata(name, setup_requires):
             # pip, Cython, numpy).
             install_name="$(comm -13 '{venvdir}/pre_install_list' \
                                      '{venvdir}/post_install_list')"
-            : ${{install_name:="$(basename '{req}' .git)"}}
+            # the requirement can be 'req_name==version', or a path name.
+            if [[ -z "$install_name" ]]; then
+                if [[ -e '{req}' ]]; then
+                    install_name="$(basename '{req}' .git)"
+                else
+                    install_name="$(echo '{req}' | cut -d= -f1 -)"
+                fi
+            fi
         }}
         show_cmd() {{
             python <<EOF
