@@ -42,6 +42,15 @@ Arch packaging
 Mispackaged packages
 ====================
 
+- Bad vendoring by Arch.
+
+  - ``bleach``
+
+- Setup-time non-Python dependencies.
+
+  - ``notebook`` *from the git repository* (requires at least ``bower``,
+    perhaps more).
+
 - Setup-time dependencies (use ``--setup-requires=...`` as a workaround):
 
   - ``pomegranate`` (Cython files depend on scipy's BLAS ``pxd``\s.)
@@ -56,10 +65,11 @@ Mispackaged packages
 
   - Undeclared dependencies:
 
-    - ``hmmlearn``
+    - ``hmmlearn`` (Fixed as of master.)
     - ``memory_profiler`` ("Strongly recommends" ``psutil``.)
+    - ``sftpman-gtk`` (Depends on ``PyGObject``.)
     - ``sphinx-gallery`` (Could fetch ``requirements.txt`` from Github.)
-    - ``supersmoother``
+    - ``supersmoother`` (Fixed as of master.)
 
   - ``ctypes``-loaded binary dependencies:
 
@@ -68,7 +78,7 @@ Mispackaged packages
 
   - Wrappers for binaries:
 
-    - ``graphviz``
+    - ``graphviz``, ``sftpman``
 
 - Undetected split packages:
 
