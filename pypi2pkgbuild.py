@@ -251,6 +251,7 @@ def _run_shell(args, **kwargs):
     """
     kwargs = {"shell": isinstance(args, str),
               "env": {**os.environ,
+                      "LC_ALL": "C",  # So that text outputs can be parsed.
                       "PYTHONNOUSERSITE": "1",
                       "PIP_CONFIG_FILE": "/dev/null"},
               "check": True,
