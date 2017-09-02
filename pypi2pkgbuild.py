@@ -575,7 +575,7 @@ def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
 
 def _find_arch_name_version(pep503_name):
     for standalone in [True, False]:  # vendored into another Python package?
-        parts = _run_shell(
+        *candidates, = map(str.strip, _run_shell(
             "pkgfile -riv "
             "'^/usr/lib/python{version.major}\.{version.minor}/{parent}"
             r"{wheel_name}-.*py{version.major}\.{version.minor}\.egg-info' "
@@ -583,9 +583,13 @@ def _find_arch_name_version(pep503_name):
                 parent="site-packages/" if standalone else "",
                 wheel_name=to_wheel_name(pep503_name),
                 version=sys.version_info),
-            stdout=PIPE).stdout[:-1].split()
-        if parts:
-            pkgname, version = parts
+            stdout=PIPE).stdout[:-1].splitlines())
+        if len(candidates) > 1:
+            raise PackagingError(
+                "Multiple candidates for {}: {}.".format(
+                    pep503_name, ", ".join(candidates)))
+        elif len(candidates) == 1:
+            pkgname, version = candidates[0].split()
             arch_version = ArchVersion.parse(version)
             return pkgname, arch_version
 

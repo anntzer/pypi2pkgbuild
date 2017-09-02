@@ -39,12 +39,16 @@ Arch packaging
   ``PyQt5``) and thus not seen by ``pip list --outdated`` (and thus
   ``pypi2pkgbuild.py -o``).
 
-Mispackaged packages
-====================
+Other mispackaged packages
+==========================
 
 - Bad vendoring by Arch.
 
   - ``bleach``
+
+- Packages present with two names.
+
+  - ``h5py`` (``python-h5py``, ``python-h5py-openmpi``).
 
 - Setup-time non-Python dependencies.
 
@@ -87,3 +91,5 @@ Mispackaged packages
     provides/conflicts the latter).  ``pkgbase`` could be read out of
     ``.PKGINFO``, but does pacman provide a way to find packages given a
     ``pkgbase``?
+
+
