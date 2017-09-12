@@ -387,11 +387,11 @@ def _get_metadata(name, setup_requires):
         . '{venvdir}/bin/activate'
         pip install --upgrade {setup_requires} >/dev/null
         install_cmd() {{
-            pip freeze | cut -d= -f1 >'{venvdir}/pre_install_list'
+            pip freeze | cut -d= -f1 | sort >'{venvdir}/pre_install_list'
             if ! pip install --no-deps '{req}'; then
                 return 1
             fi
-            pip freeze | cut -d= -f1 >'{venvdir}/post_install_list'
+            pip freeze | cut -d= -f1 | sort >'{venvdir}/post_install_list'
             # installed name, or real name if it doesn't appear (setuptools,
             # pip, Cython, numpy).
             install_name="$(comm -13 '{venvdir}/pre_install_list' \
@@ -904,6 +904,7 @@ class Package(_BasePackage):
                     self._get_sdist_url(), options.guess_makedepends)))
 
     def _find_license(self):
+        # FIXME Support license-in-wheel.
         info = self._ref.info["info"]
         licenses = []
         license_classes = [
