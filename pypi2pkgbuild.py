@@ -1314,8 +1314,8 @@ def main():
         cmd += "pacman -U{} {} {}".format(
             "" if args.build_deps else "dd",
             pacman_opts,
-            " ".join(
-                str(fpath) for fpath, is_dep in Package.build_cache.values()))
+            " ".join(shlex.quote(str(fpath))
+                     for fpath, is_dep in Package.build_cache.values()))
         deps = [name for name, (fpath, is_dep) in Package.build_cache.items()
                 if is_dep]
         if deps:
