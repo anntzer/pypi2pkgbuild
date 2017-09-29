@@ -1,11 +1,11 @@
 Issues
 ======
 
-- Packages that are manually vendored (... poorly) by Arch (e.g., ``html5lib``
-  into ``bleach``) cause some issues.  A solution would be to actually install
-  the dependencies, check whether the last versions were installed, and error
-  if this is not the case (indicating a requirement on an earlier version,
-  which necessarily means manual vendoring).
+- Packages that are manually vendored (... poorly) by Arch (e.g., previously,
+  ``html5lib`` into ``bleach``) cause some issues.  A solution would be to
+  actually install the dependencies, check whether the last versions were
+  installed, and error if this is not the case (indicating a requirement on an
+  earlier version, which necessarily means manual vendoring).
 
 - VCS fragments cannot be given.
 
@@ -41,10 +41,6 @@ Arch packaging
 
 Other mispackaged packages
 ==========================
-
-- Bad vendoring by Arch.
-
-  - ``bleach``
 
 - Packages present with two names.
 
@@ -91,5 +87,3 @@ Other mispackaged packages
     provides/conflicts the latter).  ``pkgbase`` could be read out of
     ``.PKGINFO``, but does pacman provide a way to find packages given a
     ``pkgbase``?
-
-
