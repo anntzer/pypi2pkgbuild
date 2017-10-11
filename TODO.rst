@@ -87,3 +87,8 @@ Other mispackaged packages
     provides/conflicts the latter).  ``pkgbase`` could be read out of
     ``.PKGINFO``, but does pacman provide a way to find packages given a
     ``pkgbase``?
+
+- Mispackaged upstreams:
+
+  - ``pot==0.4.0`` (README encoding.)
+  - ``tqdm>=4.19.1.post1`` (man page location.)

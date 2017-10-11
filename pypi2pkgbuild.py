@@ -731,7 +731,9 @@ class _BasePackage(ABC):
         # `pkgver()` may update the PKGBUILD, so reread it.
         pkgbuild_contents = (cwd / "PKGBUILD").read_text()
         # Binary dependencies.
-        extra_deps_re = "(?<=E: Dependency ).*(?= detected and not included)"
+        extra_deps_re = (
+            "(?<=^{} E: Dependency ).*(?= detected and not included)"
+            .format(self.pkgname))
         extra_deps = [
             match.group(0)
             for match in map(re.compile(extra_deps_re).search, namcap)
@@ -743,7 +745,8 @@ class _BasePackage(ABC):
             needs_rebuild = True
         # Unexpected arch-dependent package (e.g. direct compilation of C
         # source).
-        any_arch_re = "E: ELF file .* found in an 'any' package."
+        any_arch_re = "^{} E: ELF file .* found in an 'any' package.".format(
+            self.pkgname)
         if any(re.search(any_arch_re, line) for line in namcap):
             pkgbuild_contents = re.sub(
                 "(?m)^arch=.*$",
@@ -762,14 +765,16 @@ class _BasePackage(ABC):
         # away.  Extension modules unconditionally link to `libpthread` (see
         # output of `python-config --libs`) so filter that away too.  It would
         # be preferable to use a `namcap` option instead, though.
-        _run_shell(
-            "namcap {} "
-            "| grep -v \"W: "
+        namcap_report = _run_shell(
+            f"namcap {fullpath.name} "
+            f"| grep -v \"^{self.pkgname} W: "
                 r"\(Dependency included and not needed"
                 r"\|Unused shared library '/usr/lib/libpthread\.so\.0'\)"
             "\" || "
-            "true".format(fullpath.name),
-            cwd=cwd)
+            "true", stdout=PIPE, cwd=cwd).stdout
+        print(namcap_report[:-1])
+        if re.search(f"^{fullpath.name} E: ".format(), namcap_report):
+            raise PackagingError("namcap found a problem with the package.")
         _run_shell("namcap PKGBUILD", cwd=cwd)
         _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
         type(self).build_cache[self.pkgname] = (fullpath, options.is_dep)
