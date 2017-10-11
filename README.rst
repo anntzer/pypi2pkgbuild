@@ -44,7 +44,12 @@ build it.
 
 In order to provide additional information to ``makepkg``, edit
 ``PKGBUILD_EXTRAS`` (which can also be done with the ``--pkgbuild-extras``
-flag).  This file is sourced at the *end* of ``PKGBUILD``.
+flag).  This file is sourced at the *end* of ``PKGBUILD``.  For ease of
+patching, the ``build``, ``package``, and, where applicable, ``pkgver``
+functions are defined by forwarding to ``_build``, ``_package``, and
+``_pkgver``.  A ``_check`` function is also available, but not used (due to the
+lack of standard testing CLI).  Some useful examples of ``PKGBUILD_EXTRAS`` are
+listed in the ``pkgbuild-extras`` folder.
 
 Usage notes
 ```````````

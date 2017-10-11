@@ -178,7 +178,7 @@ _dist_name() {
 }
 
 if [[ $(_first_source) =~ ^git+ ]]; then
-    pkgver() {
+    _pkgver() {
         ( set -o pipefail
           cd "$srcdir/$(_dist_name)"
           git describe --long --tags 2>/dev/null |
@@ -187,9 +187,11 @@ if [[ $(_first_source) =~ ^git+ ]]; then
               "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
         )
     }
+
+    pkgver() { _pkgver; }
 fi
 
-build() {
+_build() {
     if _is_wheel; then return; fi
     cd "$srcdir/$(_dist_name)"
     # See Arch Wiki/PKGBUILD/license.
@@ -208,16 +210,17 @@ build() {
         true
 }
 
-check() {
-    # Remove the first line line to run tests.
+build() { _build; }
+
+_check() {
+    # Define check(), possibly using _check as a helper, to run the tests.
     # You may need to call `python setup.py build_ext -i` first.
-    return 0
     if _is_wheel; then return; fi
     cd "$srcdir/$(_dist_name)"
     python setup.py -q test
 }
 
-package() {
+_package() {
     cd "$srcdir"
     # pypa/pip#3063: pip always checks for a globally installed version.
     pip --quiet install --root="$pkgdir" --no-deps --ignore-installed \\
@@ -226,6 +229,8 @@ package() {
         install -D -m644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     fi
 }
+
+package() { _package; }
 
 . "$(dirname "$BASH_SOURCE")/PKGBUILD_EXTRAS"
 """
@@ -695,8 +700,18 @@ class _BasePackage(ABC):
     def write_to(self, options):
         cwd = options.base_path / self.pkgname
         cwd.mkdir(parents=True, exist_ok=options.force)
-        (cwd / "PKGBUILD_EXTRAS").write_text(options.pkgbuild_extras)
         (cwd / "PKGBUILD").write_text(self._pkgbuild)
+        if os.path.isdir(options.pkgbuild_extras):
+            extras_path = (Path(options.pkgbuild_extras)
+                           / f"{self.pkgname}.PKGBUILD_EXTRAS")
+            if extras_path.exists():
+                LOGGER.info("Using %s.", extras_path)
+                extras = extras_path.read_text()
+            else:
+                extras = ""
+        else:
+            extras = options.pkgbuild_extras
+        (cwd / "PKGBUILD_EXTRAS").write_text(extras)
         for fname, content in self._files.items():
             (cwd / fname).write_bytes(content)
         if isinstance(self, Package):
@@ -1240,7 +1255,10 @@ def main():
         help="Don't generate PKGBUILD for dependencies.")
     parser.add_argument(
         "-e", "--pkgbuild-extras", default="",
-        help="Contents of PKGBUILD_EXTRAS.")
+        help="Either contents of PKGBUILD_EXTRAS, or path to a patch "
+             "directory (if a valid path).  A patch directory should contain "
+             "files of the form $pkgname.PKGBUILD_EXTRAS, which are used as "
+             "PKGBUILD_EXTRAS.")
     parser.add_argument(
         "-m", "--makepkg", metavar="MAKEPKG_OPTS",
         default="--cleanbuild --nodeps",
