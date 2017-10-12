@@ -51,35 +51,6 @@ Other mispackaged packages
   - ``notebook`` *from the git repository* (requires at least ``bower``,
     perhaps more).
 
-- Setup-time dependencies (use ``--setup-requires=...`` as a workaround):
-
-  - ``pomegranate`` (Cython files depend on scipy's BLAS ``pxd``\s.)
-
-- Missing dependencies (use ``--pkgbuild-extras='depends+=(...)'`` as a
-  workaround):
-
-  - ``extras_requires`` (see above):
-
-    - ``scikit-image`` (The AUR package doesn't even declare ``dask`` as a
-      dependency.)
-
-  - Undeclared dependencies:
-
-    - ``hmmlearn`` (Fixed as of master.)
-    - ``memory_profiler`` ("Strongly recommends" ``psutil``.)
-    - ``sftpman-gtk`` (Depends on ``PyGObject``.)
-    - ``sphinx-gallery`` (Could fetch ``requirements.txt`` from Github.)
-    - ``supersmoother`` (Fixed as of master.)
-
-  - ``ctypes``-loaded binary dependencies:
-
-    - ``pylibftdi`` (Depends on ``libftdi``.)
-    - ``yep`` (Depends on ``gperftools``.)
-
-  - Wrappers for binaries:
-
-    - ``graphviz``, ``sftpman``
-
 - Undetected split packages:
 
   - Arch splits ``pygments`` into ``python-pygments`` and ``pygmentize``,
@@ -90,5 +61,7 @@ Other mispackaged packages
 
 - Mispackaged upstreams:
 
-  - ``pot==0.4.0`` (README encoding.)
-  - ``tqdm>=4.19.1.post1`` (man page location.)
+  - ``pot==0.4.0`` (README encoding, fixed as of master.)
+
+Note that fixes for some other packages are provided in the ``pkgbuild-extras``
+directory.

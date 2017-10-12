@@ -1,0 +1,4 @@
+# python-sphinx-gallery
+# Missing dependency, fixed in master.
+depends+=('python-matplotlib' 'python-pillow' 'python-sphinx')
+# vim: set ft=PKGBUILD :

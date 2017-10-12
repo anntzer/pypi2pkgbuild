@@ -1,0 +1,4 @@
+# python-supersmoother
+# Missing dependency, fixed in master.
+depends+=('python-numpy')
+# vim: set ft=PKGBUILD :

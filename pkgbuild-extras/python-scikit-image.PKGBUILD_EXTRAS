@@ -1,0 +1,4 @@
+# python-scikit-image
+# Missing extras_require.
+depends+=('python-dask')
+# vim: set ft=PKGBUILD :
