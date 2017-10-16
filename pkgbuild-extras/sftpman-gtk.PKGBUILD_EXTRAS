@@ -1,0 +1,4 @@
+# sftpman-gtk
+# Missing/binary dependencies.
+depends+=('gtk3' 'python-gobject')
+# vim: set ft=PKGBUILD :

@@ -1,11 +1,11 @@
 Issues
 ======
 
-- Packages that are manually vendored (... poorly) by Arch (e.g., ``html5lib``
-  into ``bleach``) cause some issues.  A solution would be to actually install
-  the dependencies, check whether the last versions were installed, and error
-  if this is not the case (indicating a requirement on an earlier version,
-  which necessarily means manual vendoring).
+- Packages that are manually vendored (... poorly) by Arch (e.g., previously,
+  ``html5lib`` into ``bleach``) cause some issues.  A solution would be to
+  actually install the dependencies, check whether the last versions were
+  installed, and error if this is not the case (indicating a requirement on an
+  earlier version, which necessarily means manual vendoring).
 
 - VCS fragments cannot be given.
 
@@ -39,36 +39,17 @@ Arch packaging
   ``PyQt5``) and thus not seen by ``pip list --outdated`` (and thus
   ``pypi2pkgbuild.py -o``).
 
-Mispackaged packages
-====================
+Other mispackaged packages
+==========================
 
-- Setup-time dependencies (use ``--setup-requires=...`` as a workaround):
+- Packages present with two names.
 
-  - ``pomegranate`` (Cython files depend on scipy's BLAS ``pxd``\s.)
+  - ``h5py`` (``python-h5py``, ``python-h5py-openmpi``).
 
-- Missing dependencies (use ``--pkgbuild-extras='depends+=(...)'`` as a
-  workaround):
+- Setup-time non-Python dependencies.
 
-  - ``extras_requires`` (see above):
-
-    - ``scikit-image`` (The AUR package doesn't even declare ``dask`` as a
-      dependency.)
-
-  - Undeclared dependencies:
-
-    - ``hmmlearn``
-    - ``memory_profiler`` ("Strongly recommends" ``psutil``.)
-    - ``sphinx-gallery`` (Could fetch ``requirements.txt`` from Github.)
-    - ``supersmoother``
-
-  - ``ctypes``-loaded binary dependencies:
-
-    - ``pylibftdi`` (Depends on ``libftdi``.)
-    - ``yep`` (Depends on ``gperftools``.)
-
-  - Wrappers for binaries:
-
-    - ``graphviz``
+  - ``notebook`` *from the git repository* (requires at least ``bower``,
+    perhaps more).
 
 - Undetected split packages:
 
@@ -77,3 +58,10 @@ Mispackaged packages
     provides/conflicts the latter).  ``pkgbase`` could be read out of
     ``.PKGINFO``, but does pacman provide a way to find packages given a
     ``pkgbase``?
+
+- Mispackaged upstreams:
+
+  - ``pot==0.4.0`` (README encoding, fixed as of master.)
+
+Note that fixes for some other packages are provided in the ``pkgbuild-extras``
+directory.

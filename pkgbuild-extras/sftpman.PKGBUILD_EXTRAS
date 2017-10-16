@@ -1,0 +1,4 @@
+# sftpman
+# Binary dependency.
+depends+=('sshfs')
+# vim: set ft=PKGBUILD :

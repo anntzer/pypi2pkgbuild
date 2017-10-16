@@ -1,0 +1,4 @@
+# python-pomegranate
+# Cython files depend on scipy's BLAS pxd's.
+makedepends+=('python-scipy')
+# vim: set ft=PKGBUILD :

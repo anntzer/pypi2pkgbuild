@@ -1,0 +1,8 @@
+# tqdm
+# tqdm>=4.19.1.post1 packages man pages to non-FHS directory (#465).
+package() {
+    _package &&
+    mv "$pkgdir/usr/man" "$pkgdir/usr/share/man" ||
+    return 1
+}
+# vim: set ft=PKGBUILD :

@@ -178,7 +178,7 @@ _dist_name() {
 }
 
 if [[ $(_first_source) =~ ^git+ ]]; then
-    pkgver() {
+    _pkgver() {
         ( set -o pipefail
           cd "$srcdir/$(_dist_name)"
           git describe --long --tags 2>/dev/null |
@@ -187,9 +187,11 @@ if [[ $(_first_source) =~ ^git+ ]]; then
               "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
         )
     }
+
+    pkgver() { _pkgver; }
 fi
 
-build() {
+_build() {
     if _is_wheel; then return; fi
     cd "$srcdir/$(_dist_name)"
     # See Arch Wiki/PKGBUILD/license.
@@ -208,16 +210,17 @@ build() {
         true
 }
 
-check() {
-    # Remove the first line line to run tests.
+build() { _build; }
+
+_check() {
+    # Define check(), possibly using _check as a helper, to run the tests.
     # You may need to call `python setup.py build_ext -i` first.
-    return 0
     if _is_wheel; then return; fi
     cd "$srcdir/$(_dist_name)"
     python setup.py -q test
 }
 
-package() {
+_package() {
     cd "$srcdir"
     # pypa/pip#3063: pip always checks for a globally installed version.
     pip --quiet install --root="$pkgdir" --no-deps --ignore-installed \\
@@ -226,6 +229,8 @@ package() {
         install -D -m644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     fi
 }
+
+package() { _package; }
 
 . "$(dirname "$BASH_SOURCE")/PKGBUILD_EXTRAS"
 """
@@ -251,6 +256,7 @@ def _run_shell(args, **kwargs):
     """
     kwargs = {"shell": isinstance(args, str),
               "env": {**os.environ,
+                      "LC_ALL": "C",  # So that text outputs can be parsed.
                       "PYTHONNOUSERSITE": "1",
                       "PIP_CONFIG_FILE": "/dev/null"},
               "check": True,
@@ -296,8 +302,8 @@ class WheelInfo(
         return cls(name, version, build, python, abi, platform)
 
 
-def to_wheel_name(pypi_normed_name):
-    return pypi_normed_name.replace("-", "_")
+def to_wheel_name(pep503_name):
+    return pep503_name.replace("-", "_")
 
 
 class PackagingError(Exception):
@@ -386,16 +392,23 @@ def _get_metadata(name, setup_requires):
         . '{venvdir}/bin/activate'
         pip install --upgrade {setup_requires} >/dev/null
         install_cmd() {{
-            pip freeze | cut -d= -f1 >'{venvdir}/pre_install_list'
+            pip freeze | cut -d= -f1 | sort >'{venvdir}/pre_install_list'
             if ! pip install --no-deps '{req}'; then
                 return 1
             fi
-            pip freeze | cut -d= -f1 >'{venvdir}/post_install_list'
+            pip freeze | cut -d= -f1 | sort >'{venvdir}/post_install_list'
             # installed name, or real name if it doesn't appear (setuptools,
             # pip, Cython, numpy).
             install_name="$(comm -13 '{venvdir}/pre_install_list' \
                                      '{venvdir}/post_install_list')"
-            : ${{install_name:="$(basename '{req}' .git)"}}
+            # the requirement can be 'req_name==version', or a path name.
+            if [[ -z "$install_name" ]]; then
+                if [[ -e '{req}' ]]; then
+                    install_name="$(basename '{req}' .git)"
+                else
+                    install_name="$(echo '{req}' | cut -d= -f1 -)"
+                fi
+            fi
         }}
         show_cmd() {{
             python <<EOF
@@ -452,8 +465,7 @@ def _get_info(name, *,
             raise PackagingError(
                 "No support for packaging specific revisions.")
         metadata = _get_metadata(
-            name,
-            _guess_url_makedepends(name, guess_makedepends).pypi_normed_names)
+            name, _guess_url_makedepends(name, guess_makedepends).pep503_names)
         try:  # Normalize the name if available on PyPI.
             metadata["name"] = _get_info(
                 metadata["name"], _sources=("pypi",))["info"]["name"]
@@ -472,8 +484,7 @@ def _get_info(name, *,
         if not parsed.scheme == "file":
             return
         metadata = _get_metadata(
-            name,
-            _guess_url_makedepends(name, guess_makedepends).pypi_normed_names)
+            name, _guess_url_makedepends(name, guess_makedepends).pep503_names)
         return {"info": {"download_url": name,
                          "home_page": name,
                          "package_url": name,
@@ -534,16 +545,15 @@ def _get_site_packages_location():
 #     `.{dist,egg}-info`.
 
 
-def _find_installed_name_version(pypi_normed_name, *, ignore_vendored=False):
+def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
     parts = (
         _run_shell(
             "(shopt -s nocaseglob; pacman -Qo {}/{}-*-info 2>/dev/null) "
             "| rev | cut -d' ' -f1,2 | rev".format(
-                _get_site_packages_location(),
-                to_wheel_name(pypi_normed_name)),
+                _get_site_packages_location(), to_wheel_name(pep503_name)),
             stdout=PIPE).stdout[:-1].split()
         or _run_shell(
-            "pacman -Q python-{} 2>/dev/null".format(pypi_normed_name),
+            "pacman -Q python-{} 2>/dev/null".format(pep503_name),
             stdout=PIPE, check=False).stdout[:-1].split())
     if parts:
         pkgname, version = parts  # This will raise if there is an ambiguity.
@@ -568,18 +578,23 @@ def _find_installed_name_version(pypi_normed_name, *, ignore_vendored=False):
         return
 
 
-def _find_arch_name_version(pypi_normed_name):
+def _find_arch_name_version(pep503_name):
     for standalone in [True, False]:  # vendored into another Python package?
-        parts = _run_shell(
-            "pkgfile -riv '{parent}/{wheel_name}"
-                         r"-.*py{version.major}\.{version.minor}\.egg-info' "
+        *candidates, = map(str.strip, _run_shell(
+            "pkgfile -riv "
+            "'^/usr/lib/python{version.major}\.{version.minor}/{parent}"
+            r"{wheel_name}-.*py{version.major}\.{version.minor}\.egg-info' "
             "| cut -f1 | uniq | cut -d/ -f2".format(
-                parent="/site-packages" if standalone else "",
-                wheel_name=to_wheel_name(pypi_normed_name),
+                parent="site-packages/" if standalone else "",
+                wheel_name=to_wheel_name(pep503_name),
                 version=sys.version_info),
-            stdout=PIPE).stdout[:-1].split()
-        if parts:
-            pkgname, version = parts
+            stdout=PIPE).stdout[:-1].splitlines())
+        if len(candidates) > 1:
+            raise PackagingError(
+                "Multiple candidates for {}: {}.".format(
+                    pep503_name, ", ".join(candidates)))
+        elif len(candidates) == 1:
+            pkgname, version = candidates[0].split()
             arch_version = ArchVersion.parse(version)
             return pkgname, arch_version
 
@@ -597,15 +612,16 @@ class PackageRef:
         self.orig_name = name  # A name or an URL.
         self.info = _get_info(
             name, pre=pre, guess_makedepends=guess_makedepends)
+        self.pypi_name = self.info["info"]["name"]
         # pacman -Slq | grep '^python-' | cut -d- -f 2- |
         #     grep -v '^\([[:alnum:]]\)*$' | grep '_'
         # (or '\.', or '-') shows that PEP503 normalization is by far the most
-        # common.
-        self.pypi_normed_name = distlib_normalize_name(
-            self.info["info"]["name"])
+        # common, so we use it everywhere... except when downloading, which
+        # requires the actual PyPI-registered name.
+        self.pep503_name = distlib_normalize_name(self.pypi_name)
 
         if subpkg_of:
-            pkgname = "python--{}".format(self.pypi_normed_name)
+            pkgname = "python--{}".format(self.pep503_name)
             depname = subpkg_of.pkgname
             arch_version = None
 
@@ -621,9 +637,9 @@ class PackageRef:
             # dependencies.
 
             installed = _find_installed_name_version(
-                self.pypi_normed_name, ignore_vendored=True)
-            arch = _find_arch_name_version(self.pypi_normed_name)
-            default = "python-{}".format(self.pypi_normed_name), None
+                self.pep503_name, ignore_vendored=True)
+            arch = _find_arch_name_version(self.pep503_name)
+            default = "python-{}".format(self.pep503_name), None
             pkgname, arch_version = installed or arch or default
             depname, _ = arch or installed or default
 
@@ -655,9 +671,9 @@ class PackageRef:
 
 class DependsTuple(tuple):  # Keep it hashable.
     @property
-    def pypi_normed_names(self):
+    def pep503_names(self):
         # Needs to be hashable.
-        return tuple(ref.pypi_normed_name for ref in self
+        return tuple(ref.pep503_name for ref in self
                      if isinstance(ref, PackageRef))
 
     def __format__(self, fmt):
@@ -684,8 +700,18 @@ class _BasePackage(ABC):
     def write_to(self, options):
         cwd = options.base_path / self.pkgname
         cwd.mkdir(parents=True, exist_ok=options.force)
-        (cwd / "PKGBUILD_EXTRAS").write_text(options.pkgbuild_extras)
         (cwd / "PKGBUILD").write_text(self._pkgbuild)
+        if os.path.isdir(options.pkgbuild_extras):
+            extras_path = (Path(options.pkgbuild_extras)
+                           / f"{self.pkgname}.PKGBUILD_EXTRAS")
+            if extras_path.exists():
+                LOGGER.info("Using %s.", extras_path)
+                extras = extras_path.read_text()
+            else:
+                extras = ""
+        else:
+            extras = options.pkgbuild_extras
+        (cwd / "PKGBUILD_EXTRAS").write_text(extras)
         for fname, content in self._files.items():
             (cwd / fname).write_bytes(content)
         if isinstance(self, Package):
@@ -720,7 +746,9 @@ class _BasePackage(ABC):
         # `pkgver()` may update the PKGBUILD, so reread it.
         pkgbuild_contents = (cwd / "PKGBUILD").read_text()
         # Binary dependencies.
-        extra_deps_re = "(?<=E: Dependency ).*(?= detected and not included)"
+        extra_deps_re = (
+            "(?<=^{} E: Dependency ).*(?= detected and not included)"
+            .format(self.pkgname))
         extra_deps = [
             match.group(0)
             for match in map(re.compile(extra_deps_re).search, namcap)
@@ -732,7 +760,8 @@ class _BasePackage(ABC):
             needs_rebuild = True
         # Unexpected arch-dependent package (e.g. direct compilation of C
         # source).
-        any_arch_re = "E: ELF file .* found in an 'any' package."
+        any_arch_re = "^{} E: ELF file .* found in an 'any' package.".format(
+            self.pkgname)
         if any(re.search(any_arch_re, line) for line in namcap):
             pkgbuild_contents = re.sub(
                 "(?m)^arch=.*$",
@@ -751,14 +780,16 @@ class _BasePackage(ABC):
         # away.  Extension modules unconditionally link to `libpthread` (see
         # output of `python-config --libs`) so filter that away too.  It would
         # be preferable to use a `namcap` option instead, though.
-        _run_shell(
-            "namcap {} "
-            "| grep -v \"W: "
+        namcap_report = _run_shell(
+            f"namcap {fullpath.name} "
+            f"| grep -v \"^{self.pkgname} W: "
                 r"\(Dependency included and not needed"
                 r"\|Unused shared library '/usr/lib/libpthread\.so\.0'\)"
             "\" || "
-            "true".format(fullpath.name),
-            cwd=cwd)
+            "true", stdout=PIPE, cwd=cwd).stdout
+        print(namcap_report[:-1])
+        if re.search(f"^{fullpath.name} E: ".format(), namcap_report):
+            raise PackagingError("namcap found a problem with the package.")
         _run_shell("namcap PKGBUILD", cwd=cwd)
         _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
         type(self).build_cache[self.pkgname] = (fullpath, options.is_dep)
@@ -791,7 +822,7 @@ class Package(_BasePackage):
             "{}=={}".format(ref.orig_name, self.pkgver)
             if urllib.parse.urlparse(ref.orig_name).scheme == ""
             else ref.orig_name,
-            self._makedepends.pypi_normed_names)
+            self._makedepends.pep503_names)
         self._depends = DependsTuple(
             PackageRef(req)
             if options.build_deps else
@@ -849,7 +880,7 @@ class Package(_BasePackage):
                     # - PyPI currently allows uploading of packages with local
                     #   version identifiers, see pypa/pypi-legacy#486.
                     if (wheel_info.name.lower()
-                            != to_wheel_name(self._ref.pypi_normed_name)
+                            != to_wheel_name(self._ref.pep503_name)
                         or wheel_info.version
                             != self._ref.info["info"]["version"]):
                         LOGGER.warning("Unexpected wheel info: %s", wheel_info)
@@ -870,14 +901,13 @@ class Package(_BasePackage):
         return (self._ref.orig_name
                 if re.match(r"\A(git\+|file\Z)", parsed.scheme)
                 else "pip://{}=={}#--no-binary=:all:".format(
-                    self._ref.pypi_normed_name, self.pkgver))
+                    self._ref.pypi_name, self.pkgver))
 
     def _get_pip_url(self):
         parsed = urllib.parse.urlparse(self._ref.orig_name)
         return (self._ref.orig_name
                 if re.match(r"\A(git\+|file\Z)", parsed.scheme)
-                else "pip://{}=={}".format(
-                    self._ref.pypi_normed_name, self.pkgver))
+                else "pip://{}=={}".format(self._ref.pypi_name, self.pkgver))
 
     def _find_arch_makedepends(self, options):
         if self._get_first_package_type() == "bdist_wheel":
@@ -894,6 +924,7 @@ class Package(_BasePackage):
                     self._get_sdist_url(), options.guess_makedepends)))
 
     def _find_license(self):
+        # FIXME Support license-in-wheel.
         info = self._ref.info["info"]
         licenses = []
         license_classes = [
@@ -997,7 +1028,7 @@ class Package(_BasePackage):
         if self._ref.pkgname.startswith("python--"):
             return ""
         try:
-            name, version = _find_arch_name_version(self._ref.pypi_normed_name)
+            name, version = _find_arch_name_version(self._ref.pep503_name)
         except TypeError:  # name, version = None
             return ""
         else:
@@ -1007,8 +1038,7 @@ class Package(_BasePackage):
         for ref in self._depends:
             if not ref.exists:
                 # Dependency not found, build it too.
-                create_package(ref.pypi_normed_name,
-                               options._replace(is_dep=True))
+                create_package(ref.pep503_name, options._replace(is_dep=True))
 
 
 class MetaPackage(_BasePackage):
@@ -1225,7 +1255,10 @@ def main():
         help="Don't generate PKGBUILD for dependencies.")
     parser.add_argument(
         "-e", "--pkgbuild-extras", default="",
-        help="Contents of PKGBUILD_EXTRAS.")
+        help="Either contents of PKGBUILD_EXTRAS, or path to a patch "
+             "directory (if a valid path).  A patch directory should contain "
+             "files of the form $pkgname.PKGBUILD_EXTRAS, which are used as "
+             "PKGBUILD_EXTRAS.")
     parser.add_argument(
         "-m", "--makepkg", metavar="MAKEPKG_OPTS",
         default="--cleanbuild --nodeps",
@@ -1304,8 +1337,8 @@ def main():
         cmd += "pacman -U{} {} {}".format(
             "" if args.build_deps else "dd",
             pacman_opts,
-            " ".join(
-                str(fpath) for fpath, is_dep in Package.build_cache.values()))
+            " ".join(shlex.quote(str(fpath))
+                     for fpath, is_dep in Package.build_cache.values()))
         deps = [name for name, (fpath, is_dep) in Package.build_cache.items()
                 if is_dep]
         if deps:

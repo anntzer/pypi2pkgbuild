@@ -1,0 +1,4 @@
+# python-pylibftdi
+# ctypes dependency.
+depends+=('libftdi')
+# vim: set ft=PKGBUILD :

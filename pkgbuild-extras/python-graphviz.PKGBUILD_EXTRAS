@@ -1,0 +1,4 @@
+# python-graphviz
+# Binary dependency.
+depends+=('graphviz')
+# vim: set ft=PKGBUILD :
