@@ -114,7 +114,7 @@ TROVE_SPECIAL_LICENSES = {  # Standard licenses with specific line.
 }
 
 PKGBUILD_HEADER = """\
-# Maintainer: {config[maintainer]}
+# Maintainer: {config[PACKAGER]}
 
 pkgname={pkg.pkgname}
 epoch={pkg.epoch}
@@ -729,14 +729,9 @@ class _BasePackage(ABC):
         _run_shell(cmd, cwd=cwd)
 
         def _get_fullpath():
-            # Only one of the archs will be globbed successfully.
-            fullpath, = sum(
-                (list(cwd.glob(fname + ".*"))
-                 for fname in (
-                     _run_shell("makepkg --packagelist", cwd=cwd, stdout=PIPE)
-                     .stdout.splitlines())),
-                [])
-            return fullpath
+            return Path(_run_shell("makepkg --packagelist",
+                                   cwd=cwd, stdout=PIPE).stdout[:-1]
+                        + get_config()["PKGEXT"])
 
         fullpath = _get_fullpath()
         # Update PKGBUILD.
@@ -796,7 +791,7 @@ class _BasePackage(ABC):
 
 
 class Package(_BasePackage):
-    def __init__(self, ref, config, options):
+    def __init__(self, ref, options):
         super().__init__()
 
         self._ref = ref
@@ -832,7 +827,7 @@ class Package(_BasePackage):
             for req in metadata["requires"])
         self._licenses = self._find_license()
 
-        stream.write(PKGBUILD_HEADER.format(pkg=self, config=config))
+        stream.write(PKGBUILD_HEADER.format(pkg=self, config=get_config()))
         if self._urls[0]["packagetype"] == "bdist_wheel":
             # Either just "any", or some specific archs.
             for url in self._urls:
@@ -1042,7 +1037,7 @@ class Package(_BasePackage):
 
 
 class MetaPackage(_BasePackage):
-    def __init__(self, ref, config, options):
+    def __init__(self, ref, options):
         super().__init__()
         self._ref = ref
         self._arch_version = self._ref.arch_version._replace(
@@ -1050,8 +1045,7 @@ class MetaPackage(_BasePackage):
         self._subpkgrefs = DependsTuple(
             PackageRef(name, subpkg_of=ref, pre=options.pre)
             for name in ref.arch_packaged)
-        self._subpkgs = [
-            Package(ref, config, options) for ref in self._subpkgrefs]
+        self._subpkgs = [Package(ref, options) for ref in self._subpkgrefs]
         for pkg in self._subpkgs:
             pkg._pkgbuild = re.sub(
                 "(?m)^conflicts=.*$",
@@ -1060,7 +1054,7 @@ class MetaPackage(_BasePackage):
                 pkg._pkgbuild,
                 1)
         self._pkgbuild = (
-            PKGBUILD_HEADER.format(pkg=self, config=config) +
+            PKGBUILD_HEADER.format(pkg=self, config=get_config()) +
             METAPKGBUILD_CONTENTS)
 
     pkgname = property(
@@ -1104,11 +1098,11 @@ class MetaPackage(_BasePackage):
             base_path=self._get_target_path(options.base_path)))
 
 
-def dispatch_package_builder(name, config, options):
+def dispatch_package_builder(name, options):
     ref = PackageRef(
         name, pre=options.pre, guess_makedepends=options.guess_makedepends)
     cls = Package if len(ref.arch_packaged) <= 1 else MetaPackage
-    return cls(ref, config, options)
+    return cls(ref, options)
 
 
 @lru_cache()
@@ -1119,20 +1113,21 @@ def get_config():
             "pkgver=0\n"
             "pkgrel=0\n"
             "arch=(any)\n"
-            'prepare() { printf "%s" "$PACKAGER"; exit 0; }')
+            'prepare() { printf "%s\\0%s" "$PACKAGER" "$PKGEXT"; exit 0; }')
         Path(tmpdir, "PKGBUILD").write_text(mini_pkgbuild)
         try:
-            maintainer = _run_shell(
+            out = _run_shell(
                 "makepkg", cwd=tmpdir, stdout=PIPE, stderr=PIPE).stdout
         except CalledProcessError as e:
             sys.stderr.write(e.stderr)
             raise
-    return {"maintainer": maintainer}
+        packager, pkgext = out.split("\0")
+    return {"PACKAGER": packager, "PKGEXT": pkgext}
 
 
 @lru_cache()
 def create_package(name, options):
-    pkg = dispatch_package_builder(name, get_config(), options)
+    pkg = dispatch_package_builder(name, options)
     if options.build_deps:
         pkg.write_deps_to(options)
     pkg.write_to(options)
