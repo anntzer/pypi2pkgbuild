@@ -251,8 +251,8 @@ def _unique(seq):
 def _run_shell(args, **kwargs):
     """Logging wrapper for `subprocess.run`, with useful defaults.
 
-    Log at `DEBUG` level except if the `verbose` kwarg is set, in which case
-    log at `INFO` level.
+    Log at ``DEBUG`` level except if the *verbose* kwarg is set, in which case
+    log at ``INFO`` level.
     """
     kwargs = {"shell": isinstance(args, str),
               "env": {**os.environ,
@@ -272,7 +272,13 @@ def _run_shell(args, **kwargs):
                    "Running subprocess from %s:\n%s", kwargs["cwd"], args_s)
     else:
         LOGGER.log(level, "Running subprocess:\n%s", args_s)
-    return subprocess.run(args, **kwargs)
+    cproc = subprocess.run(args, **kwargs)
+    # Stripping final newlines matches the behavior of `a=$(foo)`.
+    if isinstance(cproc.stdout, str):
+        cproc.stdout = cproc.stdout.rstrip("\n")
+    elif isinstance(cproc.stdout, bytes):
+        cproc.stdout = cproc.stdout.rstrip(b"\n")
+    return cproc
 
 
 class ArchVersion(namedtuple("_ArchVersion", "epoch pkgver pkgrel")):
@@ -551,10 +557,10 @@ def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
             "(shopt -s nocaseglob; pacman -Qo {}/{}-*-info 2>/dev/null) "
             "| rev | cut -d' ' -f1,2 | rev".format(
                 _get_site_packages_location(), to_wheel_name(pep503_name)),
-            stdout=PIPE).stdout[:-1].split()
+            stdout=PIPE).stdout.split()
         or _run_shell(
             "pacman -Q python-{} 2>/dev/null".format(pep503_name),
-            stdout=PIPE, check=False).stdout[:-1].split())
+            stdout=PIPE, check=False).stdout.split())
     if parts:
         pkgname, version = parts  # This will raise if there is an ambiguity.
         if pkgname.endswith("-git"):
@@ -588,7 +594,7 @@ def _find_arch_name_version(pep503_name):
                 parent="site-packages/" if standalone else "",
                 wheel_name=to_wheel_name(pep503_name),
                 version=sys.version_info),
-            stdout=PIPE).stdout[:-1].splitlines())
+            stdout=PIPE).stdout.splitlines())
         if len(candidates) > 1:
             raise PackagingError(
                 "Multiple candidates for {}: {}.".format(
@@ -730,7 +736,7 @@ class _BasePackage(ABC):
 
         def _get_fullpath():
             return Path(_run_shell("makepkg --packagelist",
-                                   cwd=cwd, stdout=PIPE).stdout[:-1]
+                                   cwd=cwd, stdout=PIPE).stdout
                         + get_config()["PKGEXT"])
 
         fullpath = _get_fullpath()
@@ -782,7 +788,7 @@ class _BasePackage(ABC):
                 r"\|Unused shared library '/usr/lib/libpthread\.so\.0'\)"
             "\" || "
             "true", stdout=PIPE, cwd=cwd).stdout
-        print(namcap_report[:-1])
+        print(namcap_report)
         if re.search(f"^{fullpath.name} E: ".format(), namcap_report):
             raise PackagingError("namcap found a problem with the package.")
         _run_shell("namcap PKGBUILD", cwd=cwd)
