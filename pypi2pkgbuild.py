@@ -731,7 +731,7 @@ class _BasePackage(ABC):
         def _get_fullpath():
             # Only one of the archs will be globbed successfully.
             fullpath, = sum(
-                (list(cwd.glob(fname + ".*"))
+                (list(cwd.glob(fname + ".pkg.tar.xz"))
                  for fname in (
                      _run_shell("makepkg --packagelist", cwd=cwd, stdout=PIPE)
                      .stdout.splitlines())),
