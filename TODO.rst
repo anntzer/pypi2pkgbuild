@@ -17,6 +17,7 @@ Issues
 - License support is incomplete.
 
   - e.g. ``matplotlib`` has a ``LICENSE`` *folder*.
+  - get licenses from wheels.
 
 - Meta packages are fully rebuilt even if only a component needs to be built
   (although version dependencies -- in particular ``pkgrel``\s -- may have
@@ -59,9 +60,9 @@ Other mispackaged packages
     ``.PKGINFO``, but does pacman provide a way to find packages given a
     ``pkgbase``?
 
-- Mispackaged upstreams:
+- Other build failures:
 
-  - ``pot==0.4.0`` (README encoding, fixed as of master.)
+  - ``gr``.
 
 Note that fixes for some other packages are provided in the ``pkgbuild-extras``
 directory.

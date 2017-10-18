@@ -256,7 +256,10 @@ def _run_shell(args, **kwargs):
     """
     kwargs = {"shell": isinstance(args, str),
               "env": {**os.environ,
-                      "LC_ALL": "C",  # So that text outputs can be parsed.
+                      # This should fallback to C if the locale is not present.
+                      # We'd prefer C.utf8 but that doesn't exist.  With other
+                      # locales, outputs cannot be parsed.
+                      "LC_ALL": "en_US.utf8",
                       "PYTHONNOUSERSITE": "1",
                       "PIP_CONFIG_FILE": "/dev/null"},
               "check": True,
@@ -279,6 +282,26 @@ def _run_shell(args, **kwargs):
     elif isinstance(cproc.stdout, bytes):
         cproc.stdout = cproc.stdout.rstrip(b"\n")
     return cproc
+
+
+@lru_cache()
+def get_makepkg_conf():
+    with TemporaryDirectory() as tmpdir:
+        mini_pkgbuild = (
+            "pkgname=_\n"
+            "pkgver=0\n"
+            "pkgrel=0\n"
+            "arch=(any)\n"
+            'prepare() { printf "%s\\0%s" "$PACKAGER" "$PKGEXT"; exit 0; }')
+        Path(tmpdir, "PKGBUILD").write_text(mini_pkgbuild)
+        try:
+            out = _run_shell(
+                "makepkg", cwd=tmpdir, stdout=PIPE, stderr=PIPE).stdout
+        except CalledProcessError as e:
+            sys.stderr.write(e.stderr)
+            raise
+        packager, pkgext = out.split("\0")
+    return {"PACKAGER": packager, "PKGEXT": pkgext}
 
 
 class ArchVersion(namedtuple("_ArchVersion", "epoch pkgver pkgrel")):
@@ -735,9 +758,10 @@ class _BasePackage(ABC):
         _run_shell(cmd, cwd=cwd)
 
         def _get_fullpath():
-            return Path(_run_shell("makepkg --packagelist",
+            return Path(cwd,
+                        _run_shell("makepkg --packagelist",
                                    cwd=cwd, stdout=PIPE).stdout
-                        + get_config()["PKGEXT"])
+                        + get_makepkg_conf()["PKGEXT"])
 
         fullpath = _get_fullpath()
         # Update PKGBUILD.
@@ -833,7 +857,8 @@ class Package(_BasePackage):
             for req in metadata["requires"])
         self._licenses = self._find_license()
 
-        stream.write(PKGBUILD_HEADER.format(pkg=self, config=get_config()))
+        stream.write(
+            PKGBUILD_HEADER.format(pkg=self, config=get_makepkg_conf()))
         if self._urls[0]["packagetype"] == "bdist_wheel":
             # Either just "any", or some specific archs.
             for url in self._urls:
@@ -1060,8 +1085,8 @@ class MetaPackage(_BasePackage):
                 pkg._pkgbuild,
                 1)
         self._pkgbuild = (
-            PKGBUILD_HEADER.format(pkg=self, config=get_config()) +
-            METAPKGBUILD_CONTENTS)
+            PKGBUILD_HEADER.format(pkg=self, config=get_makepkg_conf())
+            + METAPKGBUILD_CONTENTS)
 
     pkgname = property(
         lambda self: self._ref.pkgname)
@@ -1109,26 +1134,6 @@ def dispatch_package_builder(name, options):
         name, pre=options.pre, guess_makedepends=options.guess_makedepends)
     cls = Package if len(ref.arch_packaged) <= 1 else MetaPackage
     return cls(ref, options)
-
-
-@lru_cache()
-def get_config():
-    with TemporaryDirectory() as tmpdir:
-        mini_pkgbuild = (
-            "pkgname=_\n"
-            "pkgver=0\n"
-            "pkgrel=0\n"
-            "arch=(any)\n"
-            'prepare() { printf "%s\\0%s" "$PACKAGER" "$PKGEXT"; exit 0; }')
-        Path(tmpdir, "PKGBUILD").write_text(mini_pkgbuild)
-        try:
-            out = _run_shell(
-                "makepkg", cwd=tmpdir, stdout=PIPE, stderr=PIPE).stdout
-        except CalledProcessError as e:
-            sys.stderr.write(e.stderr)
-            raise
-        packager, pkgext = out.split("\0")
-    return {"PACKAGER": packager, "PKGEXT": pkgext}
 
 
 @lru_cache()
