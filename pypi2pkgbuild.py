@@ -28,15 +28,19 @@ import urllib.request
 
 from pip._vendor.distlib.util import normalize_name as distlib_normalize_name
 from pip._vendor.packaging.version import parse as version_parse
+from pip._vendor import pkg_resources
 from pip.vcs import VersionControl
 
 try:
-    import _pypi2pkgbuild_version
-except ImportError:
-    from pip._vendor import pkg_resources
-    __version__ = pkg_resources.get_distribution("pypi2pkgbuild").version
-else:
-    __version__ = _pypi2pkgbuild_version.get_versions()["version"]
+    import setuptools_scm
+    __version__ = setuptools_scm.get_version(  # xref setup.py
+        root=".", relative_to=__file__,
+        version_scheme="post-release", local_scheme="node-and-date")
+except (ImportError, LookupError):
+    try:
+        __version__ = pkg_resources.get_distribution("pypi2pkgbuild").version
+    except pkg_resources.DistributionNotFound:
+        pass
 
 
 LOGGER = logging.getLogger(Path(__file__).stem)

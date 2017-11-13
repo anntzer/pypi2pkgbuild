@@ -1,2 +1,0 @@
-include versioneer.py
-include _pypi2pkgbuild_version.py
