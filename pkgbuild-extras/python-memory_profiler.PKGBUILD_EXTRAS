@@ -1,4 +1,0 @@
-# python-memory_profiler
-# "Strongly recommended" dependency
-depends+=('python-psutil')
-# vim: set ft=PKGBUILD :
