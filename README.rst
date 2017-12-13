@@ -28,10 +28,11 @@ Usage
 -----
 
 ``pypi2pkgbuild.py PYPINAME`` creates a PKGBUILD for the latest version of the
-given PyPI package (including prereleases if the ``--pre`` flag is passed.
-Because PyPI's dependencies are somewhat unreliable, it installs the package
-in a virtualenv to figure out the dependencies.  Note that thanks to ``pip``'s
-wheel cache, the build is later reused; i.e. the procedure entails no extra
+given PyPI package and the current version of the Python interpreter (Python 3
+only).  Prereleases are considered if the ``--pre`` flag is passed.  Because
+PyPI's dependency information is somewhat unreliable, it installs the package
+in a venv to figure out the dependencies.  Note that thanks to ``pip``'s wheel
+cache, the build is later reused; i.e. the procedure entails very little extra
 work.
 
 A ``-git`` package can be built with ``pypi2pkbguild.py git+https://...``.

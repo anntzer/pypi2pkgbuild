@@ -31,7 +31,13 @@ Issues
   package but this can't be done with e.g. wheels.  Perhaps we could hook
   something else?
 
-- Move ``numpy`` support to ``--guess-makedepends``.
+- Move ``numpy`` support to ``--guess-makedepends``.  Implement
+  ``guess-makedepends`` by adding shim files to the environment that check
+  whether they are accessed.  A similar strategy can be used e.g. for swig,
+  pybind11.
+
+- Support non-Python makedepends other than ``swig``, e.g.
+  ``gobject-introspection`` for ``pygobject``.
 
 Arch packaging
 ==============
@@ -66,3 +72,9 @@ Other mispackaged packages
 
 Note that fixes for some other packages are provided in the ``pkgbuild-extras``
 directory.
+
+Ideas for extracting makedepends
+================================
+
+- Intercept pkg-config calls for missing packages (e.g. cairo/pycairo?).
+- Extract manylinux wheels' vendored .libs.
