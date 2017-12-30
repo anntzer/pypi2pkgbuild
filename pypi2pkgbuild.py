@@ -53,7 +53,7 @@ PLATFORM_TAGS = {
 THIS_ARCH = ["i686", "x86_64"][sys.maxsize > 2 ** 32]
 SDIST_SUFFIXES = [".tar.gz", ".tgz", ".tar.bz2", ".zip"]
 LICENSE_NAMES = ["LICENSE", "LICENSE.txt", "license.txt",
-                 "COPYING.md", "COPYING.rst", "COPYING.txt",
+                 "COPYING", "COPYING.md", "COPYING.rst", "COPYING.txt",
                  "COPYRIGHT"]
 TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
     "GNU Affero General Public License v3":
@@ -984,6 +984,9 @@ class Package(_BasePackage):
                     continue
                 # Strip final slash for later manipulations.
                 parsed = parsed._replace(path=re.sub("/$", "", parsed.path))
+                # Could instead lookup
+                #   https://api.github.com/repos/:owner/:repo/contents
+                # or see opengh/github-ls.
                 if parsed.netloc in ["github.com", "www.github.com"]:
                     parsed = parsed._replace(
                         netloc="raw.githubusercontent.com")
@@ -1007,18 +1010,26 @@ class Package(_BasePackage):
                 if _license_found:
                     break
             else:
-                for path in map(
-                        _get_url_unpacked_path_or_null(
-                            self._get_sdist_url()).joinpath,
-                        LICENSE_NAMES):
-                    if path.is_file():
-                        self._files.update(LICENSE=path.read_bytes())
-                        break
+                try:
+                    sdist_unpackacked_path = _get_url_unpacked_path_or_null(
+                        self._get_sdist_url())
+                    # Should really fail with CalledProcessError (e.g. if
+                    # wheel-only) but that can actually be transformed into a
+                    # PackagingError; see _get_url_impl for explanation...
+                except PackagingError:
+                    pass
                 else:
-                    self._files.update(
-                        LICENSE=("LICENSE: " + ", ".join(licenses) + "\n")
-                                .encode("ascii"))
-                    LOGGER.warning("Could not retrieve license file.")
+                    for path in map(sdist_unpackacked_path.joinpath,
+                                    LICENSE_NAMES):
+                        if path.is_file():
+                            self._files.update(LICENSE=path.read_bytes())
+                            _license_found = True
+                            break
+            if not _license_found:
+                self._files.update(
+                    LICENSE=("LICENSE: " + ", ".join(licenses) + "\n")
+                            .encode("ascii"))
+                LOGGER.warning("Could not retrieve license file.")
 
         return licenses
 
