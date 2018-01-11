@@ -1,4 +1,4 @@
-# sftpman
+# python-vapory
 # Binary dependency.
-depends+=('sshfs')
+depends+=('povray')
 # vim: set ft=PKGBUILD :

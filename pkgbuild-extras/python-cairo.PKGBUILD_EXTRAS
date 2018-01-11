@@ -1,0 +1,3 @@
+# python-cairo
+makedepends+=('cairo')
+# vim: set ft=PKGBUILD :

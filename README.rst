@@ -4,6 +4,13 @@ PyPI2PKGBUILD
 Convert PyPI packages to Arch Linux packages, inspired from
 `pip2arch <https://github.com/bluepeppers/pip2arch>`_.
 
+Handles packages of all sizes, from the simplest (pure Python, no dependencies)
+to the most complex (C-level dependencies, external C libraries, etc., e.g.
+most of the scientific Python stack, or GUI toolkits such as PyGObject and
+wxPython) [#]_.
+
+.. [#] ... with a bit of help.
+
 .. contents:: :local:
 
 Dependencies and installation

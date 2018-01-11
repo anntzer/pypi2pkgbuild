@@ -1,4 +1,4 @@
-# python-pomegranate
+# python-pomegranate -- 0.9.0 is mispackaged upstream.
 # Cython files depend on scipy's BLAS pxd's.
 makedepends+=('python-scipy')
 # vim: set ft=PKGBUILD :
