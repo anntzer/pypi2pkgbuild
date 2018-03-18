@@ -145,9 +145,9 @@ attempting a build without ``numpy``, then, in case of failure, a build with
 ``numpy``.
 
 Additional Python build-time dependencies (i.e., ``setup_requires``) can be
-specified (as PyPI names) using the ``--setup-requires`` flag.  For this
-purpose, do not use the ``--pkgbuild-extras`` flag to set the ``makedepends``
-array, as the dependencies will not be installed in the initial virtualenv.
+specified (as PyPI names) using the ``--setup-requires`` flag, or just as
+normal entries using ``--pkgbuild-extras`` (they will be installed into the
+build virtualenv).
 
 Additional non-Python build-time dependencies can be set as ``makedepends``
 using ``--pkgbuild-extras``; they will be installed *before*

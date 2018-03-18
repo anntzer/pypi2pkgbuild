@@ -845,11 +845,12 @@ class Package(_BasePackage):
                 "No URL available for package {}.".format(self.pkgname))
 
         self._find_arch_and_makedepends(options)
-        for nonpy_dep in [ref for ref in self._makedepends
-                          if isinstance(ref, NonPyPackageRef)]:
+        for dep in self._makedepends:
             _run_shell("if ! pacman -Q {0} >/dev/null 2>&1; then "
-                       "sudo pacman -S --asdeps {0}; fi"
-                       .format(nonpy_dep.pkgname), verbose=True)
+                       "sudo pacman -S --asdeps {0}; fi".format(dep.pkgname),
+                       verbose=True)
+        self._extract_setup_requires()
+
         metadata = _get_metadata(
             "{}=={}".format(ref.orig_name, self.pkgver)
             if urllib.parse.urlparse(ref.orig_name).scheme == ""
@@ -972,6 +973,23 @@ class Package(_BasePackage):
                      # actually a Python package, because we need access to it
                      # (as a system package) from within the build venv.
                      *map(NonPyPackageRef, extra_makedepends.split("\n"))])
+
+    def _extract_setup_requires(self):
+        makedepends = []
+        for pkg in self._makedepends:
+            if isinstance(pkg, PackageRef):
+                makedepends.append(pkg)
+            elif isinstance(pkg, NonPyPackageRef):
+                pep503_name = _run_shell(
+                    f"pacman -Qql {pkg.pkgname} | "
+                    f"grep -Po '(?<=^{_get_site_packages_location()}/)"
+                    r"[^-]*(?=-.*\.(dist|egg)-info/$)'",
+                    stdout=PIPE, check=False).stdout
+                makedepends.append(
+                    PackageRef(pep503_name) if pep503_name else pkg)
+            else:
+                raise TypeError("Unexpected makedepends entry")
+        self._makedepends = DependsTuple(makedepends)
 
     def _find_license(self):
         # FIXME Support license-in-wheel.
@@ -1220,6 +1238,8 @@ def find_outdated():
 Options = namedtuple(
     "Options", "base_path force pre pkgrel guess_makedepends setup_requires "
                "pkgtypes build_deps pkgbuild_extras makepkg is_dep")
+
+
 def main():
 
     class CommaSeparatedList(Action):
