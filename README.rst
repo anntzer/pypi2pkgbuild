@@ -149,6 +149,10 @@ specified (as PyPI names) using the ``--setup-requires`` flag.  For this
 purpose, do not use the ``--pkgbuild-extras`` flag to set the ``makedepends``
 array, as the dependencies will not be installed in the initial virtualenv.
 
+Additional non-Python build-time dependencies can be set as ``makedepends``
+using ``--pkgbuild-extras``; they will be installed *before*
+``pypi2pkgbuild.py`` attempts to build a wheel for the package.
+
 Vendored packages
 -----------------
 

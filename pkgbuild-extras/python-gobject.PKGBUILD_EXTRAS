@@ -1,0 +1,3 @@
+# python-gobject
+makedepends+=('gobject-introspection' 'python-cairo')
+# vim: set ft=PKGBUILD :

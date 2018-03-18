@@ -1,0 +1,3 @@
+# python-gobject
+makedepends+=('webkit2gtk' 'wxgtk3')
+# vim: set ft=PKGBUILD :

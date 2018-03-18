@@ -36,15 +36,6 @@ Issues
   whether they are accessed.  A similar strategy can be used e.g. for swig,
   pybind11.
 
-- Support non-Python makedepends other than ``swig``, e.g.
-
-  - to build ``pygobject``, ``gobject-introspection`` and ``python-cairo`` must
-    be installed first, **and** a ``setup_requires`` declared on ``pycairo``.
-    (Additional conflicts issues with ``pygobject`` noted below.)
-
-  - to build ``wxpython``, ``wxgtk3`` and ``webkit2gtk`` must be installed
-    first.
-
 Arch packaging
 ==============
 
@@ -66,17 +57,12 @@ Other mispackaged packages
 
 - Undetected split packages:
 
-  - Arch splits ``pygments`` into ``python-pygments`` and ``pygmentize``,
-    but ``pypi2pkgbuild.py`` only sees the former (and thus does not
-    provides/conflicts the latter).  ``pkgbase`` could be read out of
-    ``.PKGINFO``, but does pacman provide a way to find packages given a
-    ``pkgbase``?
-
-  - Arch splits ``pygobject`` into ``python-gobject`` and ``pygobject-devel``,
-    as the latter shares a header with ``python2-gobject``.  Trying
-    to build our own ``python-gobject`` (after manually installing
-    ``gobject-instrospection`` and declaring a setup_requires on ``pycairo``,
-    see above) results in a collision on that header.
+  - Arch splits ``pygments`` into ``python-pygments`` and ``pygmentize``, and
+    ``pygobject`` into ``python-gobject`` and ``pygobject-devel``
+    (because the latter is shared with ``python2-gobject``) but in each
+    case ``pypi2pkgbuild.py`` only sees the former (and thus does not
+    provides/conflicts the latter).  Even if we webscrape ``pkgbase``, it's not
+    clear how to automatically handle the case of ``pygobject``.
 
 - Packages that install system-level (e.g., systemd) scripts:
 

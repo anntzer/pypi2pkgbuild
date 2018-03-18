@@ -134,16 +134,18 @@ makedepends=({pkg.makedepends:{pkg.__class__.__name__}})
 checkdepends=({pkg.checkdepends:{pkg.__class__.__name__}})
 provides=({pkg.provides})
 conflicts=(${{provides%=*}})  # No quotes, to avoid an empty entry.
+source=(PKGBUILD_EXTRAS)
+md5sums=(SKIP)
 """
 
 SDIST_SOURCE = """\
-source=({url[url]})
-md5sums=({url[md5_digest]})
+source+=({url[url]})
+md5sums+=({url[md5_digest]})
 """
 
 WHEEL_ANY_SOURCE = """\
-source=({url[url]})
-md5sums=({url[md5_digest]})
+source+=({url[url]})
+md5sums+=({url[md5_digest]})
 noextract=({name})
 """
 
@@ -169,7 +171,7 @@ export PIP_DISABLE_PIP_VERSION_CHECK=true
 
 _first_source() {
     echo " ${source_i686[@]} ${source_x86_64[@]} ${source[@]}" |
-        tr -s ' ' | tail -c+2 | cut -d' ' -f1
+        tr ' ' '\\n' | grep -Pv '^(PKGBUILD_EXTRAS)?$' | head -1
 }
 
 _is_wheel() {
@@ -581,8 +583,8 @@ def _get_site_packages_location():
 def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
     parts = (
         _run_shell(
-            "(shopt -s nocaseglob; pacman -Qo {}/{}-*-info 2>/dev/null) "
-            "| rev | cut -d' ' -f1,2 | rev".format(
+            "(shopt -s nocaseglob; pacman -Qo {}/{}-*-info 2>/dev/null) | "
+            "rev | cut -d' ' -f1,2 | rev".format(
                 _get_site_packages_location(), to_wheel_name(pep503_name)),
             stdout=PIPE).stdout.split()
         or _run_shell(
@@ -593,8 +595,8 @@ def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
         if pkgname.endswith("-git"):
             expected_conflict = pkgname[:-len("-git")]
             if _run_shell(
-                    "pacman -Qi {} 2>/dev/null "
-                    "| grep -q 'Conflicts With *: {}$'"
+                    "pacman -Qi {} 2>/dev/null | "
+                    "grep -q 'Conflicts With *: {}$'"
                     .format(pkgname, expected_conflict),
                     check=False).returncode == 0:
                 pkgname = pkgname[:-len("-git")]
@@ -616,8 +618,8 @@ def _find_arch_name_version(pep503_name):
         *candidates, = map(str.strip, _run_shell(
             "pkgfile -riv "
             "'^/usr/lib/python{version.major}\.{version.minor}/{parent}"
-            r"{wheel_name}-.*py{version.major}\.{version.minor}\.egg-info' "
-            "| cut -f1 | uniq | cut -d/ -f2".format(
+            r"{wheel_name}-.*py{version.major}\.{version.minor}\.egg-info' | "
+            "cut -f1 | uniq | cut -d/ -f2".format(
                 parent="site-packages/" if standalone else "",
                 wheel_name=to_wheel_name(pep503_name),
                 version=sys.version_info),
@@ -677,12 +679,12 @@ class PackageRef:
             depname, _ = arch or installed or default
 
         arch_packaged = _run_shell(
-            "pkgfile -l {} 2>/dev/null"
+            "pkgfile -l {} 2>/dev/null | "
             # Package name has no dash (per packaging standard) nor slashes
             # (which can occur when a subpackage is vendored (depending on how
             # it is done), e.g. `.../foo.egg-info` and `.../foo/bar.egg-info`
             # both existing).
-            r"| grep -Po '(?<=site-packages/)[^-/]*(?=.*\.egg-info/?$)'".
+            r"grep -Po '(?<=site-packages/)[^-/]*(?=.*\.egg-info/?$)'".
             format(pkgname), stdout=PIPE, check=False).stdout.splitlines()
 
         # Final values.
@@ -730,21 +732,23 @@ class _BasePackage(ABC):
     def write_deps_to(self, options):
         pass
 
+    def get_pkgbuild_extras(self, options):
+        if os.path.isdir(options.pkgbuild_extras):
+            extras_path = Path(options.pkgbuild_extras,
+                               f"{self.pkgname}.PKGBUILD_EXTRAS")
+            if extras_path.exists():
+                LOGGER.info("Using %s.", extras_path)
+                return extras_path.read_text()
+            else:
+                return ""
+        else:
+            return options.pkgbuild_extras
+
     def write_to(self, options):
         cwd = options.base_path / self.pkgname
         cwd.mkdir(parents=True, exist_ok=options.force)
         (cwd / "PKGBUILD").write_text(self._pkgbuild)
-        if os.path.isdir(options.pkgbuild_extras):
-            extras_path = (Path(options.pkgbuild_extras)
-                           / f"{self.pkgname}.PKGBUILD_EXTRAS")
-            if extras_path.exists():
-                LOGGER.info("Using %s.", extras_path)
-                extras = extras_path.read_text()
-            else:
-                extras = ""
-        else:
-            extras = options.pkgbuild_extras
-        (cwd / "PKGBUILD_EXTRAS").write_text(extras)
+        (cwd / "PKGBUILD_EXTRAS").write_text(self.get_pkgbuild_extras(options))
         for fname, content in self._files.items():
             (cwd / fname).write_bytes(content)
         if isinstance(self, Package):
@@ -810,12 +814,11 @@ class _BasePackage(ABC):
         # output of `python-config --libs`) so filter that away too.  It would
         # be preferable to use a `namcap` option instead, though.
         namcap_report = _run_shell(
-            f"namcap {fullpath.name} "
-            f"| grep -v \"^{self.pkgname} W: "
+            f"namcap {fullpath.name} | "
+            f"grep -v \"^{self.pkgname} W: "
                 r"\(Dependency included and not needed"
                 r"\|Unused shared library '/usr/lib/libpthread\.so\.0'\)"
-            "\" || "
-            "true", stdout=PIPE, cwd=cwd).stdout
+            "\"", cwd=cwd, stdout=PIPE, check=False).stdout
         print(namcap_report)
         if re.search(f"^{fullpath.name} E: ".format(), namcap_report):
             raise PackagingError("namcap found a problem with the package.")
@@ -841,7 +844,7 @@ class Package(_BasePackage):
             raise PackagingError(
                 "No URL available for package {}.".format(self.pkgname))
 
-        self._find_arch_makedepends(options)
+        self._find_arch_and_makedepends(options)
         for nonpy_dep in [ref for ref in self._makedepends
                           if isinstance(ref, NonPyPackageRef)]:
             _run_shell("if ! pacman -Q {0} >/dev/null 2>&1; then "
@@ -939,7 +942,7 @@ class Package(_BasePackage):
                 if re.match(r"\A(git\+|file\Z)", parsed.scheme)
                 else "pip://{}=={}".format(self._ref.pypi_name, self.pkgver))
 
-    def _find_arch_makedepends(self, options):
+    def _find_arch_and_makedepends(self, options):
         if self._get_first_package_type() == "bdist_wheel":
             self._arch = sorted(
                 {PLATFORM_TAGS[WheelInfo.parse(url["path"]).platform]
@@ -952,6 +955,23 @@ class Package(_BasePackage):
                 *map(PackageRef, options.setup_requires),
                 *_guess_url_makedepends(
                     self._get_sdist_url(), options.guess_makedepends)))
+        with TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "PKGBUILD").write_text(
+                self.get_pkgbuild_extras(options))
+            extra_makedepends = _run_shell(
+                r"makepkg --printsrcinfo | "
+                r"grep -Po '(?<=^\tmakedepends = ).*'",
+                env={**os.environ,
+                     "LIBMAKEPKG_LINT_PKGBUILD_PKGVER_SH": "1",
+                     "LIBMAKEPKG_LINT_PKGBUILD_PKGREL_SH": "1"},
+                cwd=tmpdir, stdout=PIPE, check=False).stdout
+            if extra_makedepends:
+                self._makedepends = DependsTuple(
+                    [*self._makedepends,
+                     # Use NonPyPackageRef even when the extra makedepends is
+                     # actually a Python package, because we need access to it
+                     # (as a system package) from within the build venv.
+                     *map(NonPyPackageRef, extra_makedepends.split("\n"))])
 
     def _find_license(self):
         # FIXME Support license-in-wheel.
@@ -1171,8 +1191,8 @@ def find_outdated():
         return {}
     names = [line.split()[0] for line in lines]
     # `pip show` is rather slow, so just call it once.
-    locs = _run_shell("pip show {} 2>/dev/null "
-                      "| grep -Po '(?<=^Location: ).*'".
+    locs = _run_shell("pip show {} 2>/dev/null | "
+                      "grep -Po '(?<=^Location: ).*'".
                       format(" ".join(names)), stdout=PIPE).stdout.splitlines()
     owners = {}
     for line, name, loc in zip(lines, names, locs):
