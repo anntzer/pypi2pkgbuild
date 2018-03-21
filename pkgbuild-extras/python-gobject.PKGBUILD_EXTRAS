@@ -1,3 +1,10 @@
 # python-gobject
+# Avoid conflicts with pygobject-devel
 makedepends+=('gobject-introspection' 'python-cairo')
+
+package() {
+    _package &&
+        rm -rf "$pkgdir"/usr/{include,lib/pkgconfig} ||
+        return 1
+}
 # vim: set ft=PKGBUILD :

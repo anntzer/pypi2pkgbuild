@@ -57,20 +57,29 @@ Other mispackaged packages
 
 - Undetected split packages:
 
-  - Arch splits ``pygments`` into ``python-pygments`` and ``pygmentize``, and
-    ``pygobject`` into ``python-gobject`` and ``pygobject-devel``
+  - Arch splits ``pygments`` into ``python-pygments`` and ``pygmentize``,
+    and ``pygobject`` into ``python-gobject`` and ``pygobject-devel``
     (because the latter is shared with ``python2-gobject``) but in each
     case ``pypi2pkgbuild.py`` only sees the former (and thus does not
-    provides/conflicts the latter).  Even if we webscrape ``pkgbase``, it's not
-    clear how to automatically handle the case of ``pygobject``.
+    provides/conflicts the latter).  Due to licenses and the presence of
+    custom scripts (e.g. shell completion for ``pygmentize``, we can't rely
+    on strict inclusion).  The best solution is therefore either to declare a
+    ``conflicts``/``replaces``, or to manually remove the extraneous file (see
+    ``python-gobject.PKGBUILD_EXTRAS``).
 
 - Packages that install system-level (e.g., systemd) scripts:
 
   - ``sftpman``.
 
-- Other build failures:
+- Packages vendored into non-Python packages (could be partially detected from
+  nonmatching versions):
 
-  - ``gr``.
+  - ``lit`` (vendored into ``llvm``).
+
+- "Weird" ``setup.py``\s:
+
+  - ``pytest-pycodestyle`` (``setup.py`` packages both ``pytest-pycodestyle``
+    and ``pytest-codestyle``).
 
 Note that fixes for some other packages are provided in the ``pkgbuild-extras``
 directory.
