@@ -625,10 +625,19 @@ def _find_arch_name_version(pep503_name):
                 version=sys.version_info),
             stdout=PIPE).stdout.splitlines())
         if len(candidates) > 1:
-            raise PackagingError(
-                "Multiple candidates for {}: {}.".format(
-                    pep503_name, ", ".join(candidates)))
-        elif len(candidates) == 1:
+            message = "Multiple candidates for {}: {}.".format(
+                pep503_name, ", ".join(candidates))
+            try:
+                canonical, = (
+                    candidate for candidate in candidates
+                    if candidate.startswith(f"python-{pep503_name} "))
+            except ValueError:
+                raise PackagingError(message)
+            else:
+                LOGGER.warning("%s  Using canonical name: %s.",
+                               message, canonical.split()[0])
+                candidates = [canonical]
+        if len(candidates) == 1:
             pkgname, version = candidates[0].split()
             arch_version = ArchVersion.parse(version)
             return pkgname, arch_version

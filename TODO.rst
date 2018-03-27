@@ -46,10 +46,6 @@ Arch packaging
 Other mispackaged packages
 ==========================
 
-- Packages present with two names.
-
-  - ``h5py`` (``python-h5py``, ``python-h5py-openmpi``).
-
 - Setup-time non-Python dependencies.
 
   - ``notebook`` *from the git repository* (requires at least ``bower``,
