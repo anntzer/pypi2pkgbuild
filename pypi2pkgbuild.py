@@ -426,6 +426,7 @@ def _get_metadata(name, setup_requires):
         cd {venvdir}
         . '{venvdir}/bin/activate'
         pip install --upgrade {setup_requires} >/dev/null
+        pip install pip==9.0.3 >/dev/null
         install_cmd() {{
             pip freeze | cut -d= -f1 | sort >'{venvdir}/pre_install_list'
             if ! pip install --no-deps '{req}'; then

@@ -21,6 +21,9 @@ Dependencies and installation
 `pkgfile <https://wiki.archlinux.org/index.php/Pkgfile>`_ and
 `python-pip <https://wiki.archlinux.org/index.php/Python#Package_management>`_.
 
+**NOTE**: Due to the internals refactor in pip 10, ``pypi2pkgbuild.py`` will
+only support pip 10 once Arch Linux publishes a ``python-pip 10`` package.
+
 The script can be installed with ``pip install [--user] .``, or can also be run
 directly.
 

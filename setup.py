@@ -25,6 +25,6 @@ setup(
         "version_scheme": "post-release",
         "local_scheme": "node-and-date",
     },
-    install_requires=["pip>=9"],
+    install_requires=["pip>=9,<10"],
     scripts=["pypi2pkgbuild.py"],
 )
