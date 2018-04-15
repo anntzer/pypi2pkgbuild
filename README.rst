@@ -24,11 +24,7 @@ python-pip_.
 .. _pkgfile: https://wiki.archlinux.org/index.php/Pkgfile
 .. _python-pip: https://wiki.archlinux.org/index.php/Python#Package_management
 
-**NOTE**: Due to the internals refactor in pip 10, ``pypi2pkgbuild.py`` will
-only support pip 10 once Arch Linux publishes a ``python-pip 10`` package.
-
-**NOTE**: Only pacman 5.1 is currently supported (due to a change in the
-behavior of ``--printsrcinfo`` between 5.0 and 5.1).
+**NOTE**: Only pacman 5.1 and pip 10 are supported.
 
 The script can be installed with ``pip install [--user] .``, or can also be run
 directly.
@@ -103,14 +99,15 @@ Usage notes
         fi
      }
 
-  This function will not bypass Python packages explicitly installed from
-  the AUR, as the user may have done so to bypass some incorrect packaging
-  by ``pypi2pkgbuild.py``.  It is recommended to use the ``-i`` flag to
-  calls to ``pypi2pkgbuild.py`` (e.g. in an alias) to exclude packages
-  that are mishandled by ``pypi2pkgbuild.py`` (see `mispackaged packages
-  <TODO.rst#mispackaged-packages>`_).  The ``-i`` flag can be passed multiple
-  times; passing an empty argument to it will clear the ignore list defined so
-  far.
+  This function will not bypass Python packages explicitly installed from the
+  AUR, as the user may have done so to bypass some incorrect packaging by
+  ``pypi2pkgbuild.py``.  It is recommended to use the ``-i`` flag to calls
+  to ``pypi2pkgbuild.py`` (e.g. in an alias) to exclude packages that are
+  mishandled by ``pypi2pkgbuild.py`` (see `mispackaged packages`_).  The ``-i``
+  flag can be passed multiple times; passing an empty argument to it will clear
+  the ignore list defined so far.
+
+  .. _mispackaged packages: TODO.rst#mispackaged-packages
 
 - In order to package a locally available git repository, use
 

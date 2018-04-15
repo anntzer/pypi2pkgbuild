@@ -1,6 +1,5 @@
 #!/usr/bin/env python
-"""Convert PyPI entries to Arch Linux packages.
-"""
+"""Convert PyPI entries to Arch Linux packages."""
 
 import abc
 from abc import ABC
@@ -26,10 +25,7 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 import textwrap
 import urllib.request
 
-from pip._vendor.distlib.util import normalize_name as distlib_normalize_name
-from pip._vendor.packaging.version import parse as version_parse
-from pip._vendor import pkg_resources
-from pip.vcs import VersionControl
+import pkg_resources
 
 try:
     import setuptools_scm
@@ -232,7 +228,8 @@ _check() {
 _package() {
     cd "$srcdir"
     # pypa/pip#3063: pip always checks for a globally installed version.
-    pip --quiet install --root="$pkgdir" --no-deps --ignore-installed \\
+    pip --quiet install --root="$pkgdir" \\
+        --no-deps --ignore-installed --no-warn-script-location \\
         "$(ls ./*.whl 2>/dev/null || echo ./"$(_dist_name)")"
     if [[ -f LICENSE ]]; then
         install -D -m644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
@@ -342,12 +339,34 @@ class WheelInfo(
         return cls(name, version, build, python, abi, platform)
 
 
+# Copy-pasted from PEP503.
+def pep503_normalize_name(name):
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
 def to_wheel_name(pep503_name):
     return pep503_name.replace("-", "_")
 
 
 class PackagingError(Exception):
     pass
+
+
+# Vendored from pip._internal.vcs.VersionControl.get_url_rev.
+def _vcs_get_url_rev(url):
+    error_message = (
+        "Sorry, '%s' is a malformed VCS url. "
+        "The format is <vcs>+<protocol>://<url>, "
+        "e.g. svn+http://myrepo/svn/MyApp#egg=MyApp"
+    )
+    assert '+' in url, error_message % url
+    url = url.split('+', 1)[1]
+    scheme, netloc, path, query, frag = urllib.parse.urlsplit(url)
+    rev = None
+    if '@' in path:
+        path, rev = path.rsplit('@', 1)
+    url = urllib.parse.urlunsplit((scheme, netloc, path, query, ''))
+    return url, rev
 
 
 @lru_cache()
@@ -499,7 +518,7 @@ def _get_info(name, *,
     def _get_info_git():
         if not parsed.scheme.startswith("git+"):
             return
-        url, rev = VersionControl(name).get_url_rev()
+        url, rev = _vcs_get_url_rev(name)
         if rev:
             # FIXME pip guesses whether a name is a branch, a commit or a tag,
             # whereas the fragment type must be specified in the PKGBUILD.
@@ -550,8 +569,8 @@ def _get_info(name, *,
         request = json.loads(r.read(), object_pairs_hook=OrderedDict)
         if not _version:
             versions = [
-                version for version in
-                (version_parse(release) for release in request["releases"])
+                version for version in map(pkg_resources.parse_version,
+                                           request["releases"])
                 if not (not pre and version.is_prerelease)]
             if not versions:
                 raise PackagingError(
@@ -667,7 +686,7 @@ class PackageRef:
         # (or '\.', or '-') shows that PEP503 normalization is by far the most
         # common, so we use it everywhere... except when downloading, which
         # requires the actual PyPI-registered name.
-        self.pep503_name = distlib_normalize_name(self.pypi_name)
+        self.pep503_name = pep503_normalize_name(self.pypi_name)
 
         if subpkg_of:
             pkgname = f"python--{self.pep503_name}"
@@ -871,7 +890,7 @@ class Package(_BasePackage):
             if options.build_deps else
             # FIXME Could use something slightly better, i.e. still check local
             # packages...
-            NonPyPackageRef("python-{}".format(distlib_normalize_name(req)))
+            NonPyPackageRef("python-{}".format(pep503_normalize_name(req)))
             for req in metadata["requires"])
         self._licenses = self._find_license()
 
@@ -1212,36 +1231,42 @@ def find_outdated():
     syswide_location = (
         "{0.prefix}/lib/python{0.version_info.major}.{0.version_info.minor}"
         "/site-packages".format(sys))
-    # Skip the `--format` warning (when the default changes, switch to
-    # supporting only pip 9 instead).
-    lines = (_run_shell("pip list --outdated 2>/dev/null", stdout=PIPE)
-             .stdout.splitlines())
-    if not lines:
+    outdated = json.loads(
+        _run_shell("pip list --outdated --format=json", stdout=PIPE).stdout)
+    if not outdated:
         return {}
-    names = [line.split()[0] for line in lines]
     # `pip show` is rather slow, so just call it once.
-    locs = _run_shell("pip show {} 2>/dev/null | "
-                      "grep -Po '(?<=^Location: ).*'".
-                      format(" ".join(names)), stdout=PIPE).stdout.splitlines()
+    locs = _run_shell(
+        "pip show {} 2>/dev/null | grep -Po '(?<=^Location: ).*'".
+        format(" ".join(row["name"] for row in outdated)),
+        stdout=PIPE).stdout.splitlines()
     owners = {}
-    for line, name, loc in zip(lines, names, locs):
+    for row, loc in zip(outdated, locs):
         if loc == syswide_location:
-            pkgname, arch_version = _find_installed_name_version(name)
+            pkgname, arch_version = _find_installed_name_version(row["name"])
             # Check that pypi's version is indeed newer.  Some packages
             # mis-report their version to pip (e.g., slicerator 0.9.7's Github
             # release).
-            *_, pypi_ver, pypi_type = line.split()
-            if arch_version.pkgver == pypi_ver:
+            if arch_version.pkgver == row["latest_version"]:
                 LOGGER.warning(
                     "pip thinks that %s is outdated, but the installed "
-                    "version is actually %s, and up-to-date.", name, pypi_ver)
+                    "version is actually %s, and up-to-date.",
+                    row["name"], row["latest_version"])
                 continue
-            owners.setdefault(f"{pkgname} {arch_version}", []).append(line)
+            owners.setdefault(f"{pkgname} {arch_version}", []).append(row)
     owners = OrderedDict(sorted(owners.items()))
-    for owner, lines in owners.items():
+    rows = sum(owners.values(), [])
+    name_len, ver_len, lver_len, lft_len = (
+        max(map(len, (row[key] for row in rows)))
+        for key in ["name", "version", "latest_version", "latest_filetype"])
+    for owner, rows in owners.items():
         print(owner)
-        for line in lines:
-            print("\t" + line)
+        for row in rows:
+            print("    "
+                  f"{row['name']:{name_len}} "
+                  f"{row['version']:{ver_len}} -> "
+                  f"{row['latest_version']:{lver_len}} "
+                  f"({row['latest_filetype']:{lft_len}})")
     return owners
 
 
@@ -1379,10 +1404,9 @@ def main():
     elif update:
         if vars(args).pop("names"):
             parser.error("--update-outdated should be given with no name.")
-        ignore = {*map(distlib_normalize_name, ignore)}
-        names = {distlib_normalize_name(name)
-                 for name, *_ in map(str.split,
-                                     sum(find_outdated().values(), []))}
+        ignore = {*map(pep503_normalize_name, ignore)}
+        names = {pep503_normalize_name(row["name"])
+                 for row in sum(find_outdated().values(), [])}
         ignored = ignore & names
         if ignored:
             LOGGER.info("Ignoring update of %s.", ", ".join(sorted(ignored)))
