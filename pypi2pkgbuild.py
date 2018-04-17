@@ -325,15 +325,15 @@ class ArchVersion(namedtuple("_ArchVersion", "epoch pkgver pkgrel")):
 class WheelInfo(
         namedtuple("_WheelInfo", "name version build python abi platform")):
     @classmethod
-    def parse(cls, fname):
-        parts = Path(fname).stem.split("-")
+    def parse(cls, url):
+        parts = Path(urllib.parse.urlparse(url).path).stem.split("-")
         if len(parts) == 5:
             name, version, python, abi, platform = parts
             build = ""
         elif len(parts) == 6:
             name, version, build, python, abi, platform = parts
         else:
-            raise ValueError("Invalid wheel name: {}".format(fname))
+            raise ValueError("Invalid wheel url: {}".format(url))
         return cls(name, version, build, python, abi, platform)
 
 
@@ -535,14 +535,13 @@ def _get_info(name, *,
     def _get_info_pypi():
         try:
             r = urllib.request.urlopen(
-                "https://pypi.python.org/pypi/{}/{}/json"
-                .format(name, _version))
+                f"https://pypi.org/pypi/{name}/{_version}/json"
+                if _version else f"https://pypi.org/pypi/{name}/json")
         except urllib.error.HTTPError:
             return
         # Load as OrderedDict so that always the same sdist is chosen if e.g.
         # both zip and tgz are available.
-        request = json.loads(r.read().decode(r.headers.get_param("charset")),
-                             object_pairs_hook=OrderedDict)
+        request = json.loads(r.read(), object_pairs_hook=OrderedDict)
         if not _version:
             versions = [
                 version for version in
@@ -882,7 +881,7 @@ class Package(_BasePackage):
             for url in self._urls:
                 if url["packagetype"] != "bdist_wheel":
                     continue
-                wheel_info = WheelInfo.parse(url["path"])
+                wheel_info = WheelInfo.parse(url["url"])
                 if wheel_info.platform == "any":
                     src_template = WHEEL_ANY_SOURCE
                 else:
@@ -890,7 +889,7 @@ class Package(_BasePackage):
                 stream.write(src_template.format(
                     arch=PLATFORM_TAGS[wheel_info.platform],
                     url=url,
-                    name=Path(url["path"]).name))
+                    name=Path(urllib.parse.urlparse(url["url"]).path).name))
         else:
             stream.write(SDIST_SOURCE.format(url=self._urls[0]))
         stream.write(MORE_SOURCES.format(
@@ -906,7 +905,7 @@ class Package(_BasePackage):
         urls = []
         for url in unfiltered_urls:
             if url["packagetype"] == "bdist_wheel":
-                wheel_info = WheelInfo.parse(url["path"])
+                wheel_info = WheelInfo.parse(url["url"])
                 if wheel_info.python not in PY_TAGS:
                     continue
                 try:
@@ -956,7 +955,7 @@ class Package(_BasePackage):
     def _find_arch_and_makedepends(self, options):
         if self._get_first_package_type() == "bdist_wheel":
             self._arch = sorted(
-                {PLATFORM_TAGS[WheelInfo.parse(url["path"]).platform]
+                {PLATFORM_TAGS[WheelInfo.parse(url["url"]).platform]
                  for url in self._urls if url["packagetype"] == "bdist_wheel"})
             self._makedepends = DependsTuple(
                 map(PackageRef, ["pip", *options.setup_requires]))
