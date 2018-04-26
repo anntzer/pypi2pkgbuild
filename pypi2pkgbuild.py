@@ -294,12 +294,13 @@ def _run_shell(args, **kwargs):
 @lru_cache()
 def get_makepkg_conf():
     with TemporaryDirectory() as tmpdir:
-        mini_pkgbuild = (
-            "pkgname=_\n"
-            "pkgver=0\n"
-            "pkgrel=0\n"
-            "arch=(any)\n"
-            'prepare() { printf "%s\\0%s" "$PACKAGER" "$PKGEXT"; exit 0; }')
+        mini_pkgbuild = textwrap.dedent("""
+            pkgname=_
+            pkgver=0
+            pkgrel=0
+            arch=(any)
+            prepare() { printf "%s\\0%s" "$PACKAGER" "$PKGEXT"; exit 0; }
+        """)
         Path(tmpdir, "PKGBUILD").write_text(mini_pkgbuild)
         try:
             out = _run_shell(
@@ -421,48 +422,49 @@ def _get_metadata(name, setup_requires):
             NamedTemporaryFile("r") as more_requires_log, \
             NamedTemporaryFile("r") as log:
         script = textwrap.dedent(r"""
-        set -e
-        python -mvenv {venvdir}
-        # Don't stay in the source folder, which may contain wheels/sdists/etc.
-        cd {venvdir}
-        . '{venvdir}/bin/activate'
-        pip install --upgrade {setup_requires} >/dev/null
-        pip install pip==9.0.3 >/dev/null
-        install_cmd() {{
-            pip freeze | cut -d= -f1 | sort >'{venvdir}/pre_install_list'
-            if ! pip install --no-deps '{req}'; then
-                return 1
-            fi
-            pip freeze | cut -d= -f1 | sort >'{venvdir}/post_install_list'
-            # installed name, or real name if it doesn't appear (setuptools,
-            # pip, Cython, numpy).
-            install_name="$(comm -13 '{venvdir}/pre_install_list' \
-                                     '{venvdir}/post_install_list')"
-            # the requirement can be 'req_name==version', or a path name.
-            if [[ -z "$install_name" ]]; then
-                if [[ -e '{req}' ]]; then
-                    install_name="$(basename '{req}' .git)"
-                else
-                    install_name="$(echo '{req}' | cut -d= -f1 -)"
+            set -e
+            python -mvenv {venvdir}
+            # Don't stay in source folder, which may contain wheels/sdists/etc.
+            cd {venvdir}
+            . '{venvdir}/bin/activate'
+            pip install --upgrade {setup_requires} >/dev/null
+            pip install pip==9.0.3 >/dev/null
+            install_cmd() {{
+                pip freeze | cut -d= -f1 | sort >'{venvdir}/pre_install_list'
+                if ! pip install --no-deps '{req}'; then
+                    return 1
                 fi
+                pip freeze | cut -d= -f1 | sort >'{venvdir}/post_install_list'
+                # installed name, or real name if it doesn't appear
+                # (setuptools, pip, Cython, numpy).
+                install_name="$(comm -13 '{venvdir}/pre_install_list' \
+                                         '{venvdir}/post_install_list')"
+                # the requirement can be 'req_name==version', or a path name.
+                if [[ -z "$install_name" ]]; then
+                    if [[ -e '{req}' ]]; then
+                        install_name="$(basename '{req}' .git)"
+                    else
+                        install_name="$(echo '{req}' | cut -d= -f1 -)"
+                    fi
+                fi
+            }}
+            show_cmd() {{
+                python <<EOF
+            import json, pip
+            info = next(
+                pip.commands.show.search_packages_info(['$install_name']))
+            info.pop('entry_points', None)
+            print(json.dumps(info))
+            EOF
+            }}
+            if install_cmd >{log.name}; then
+                show_cmd
+            else
+                pip install numpy >/dev/null
+                echo numpy >>{more_requires_log.name}
+                install_cmd >{log.name}
+                show_cmd
             fi
-        }}
-        show_cmd() {{
-            python <<EOF
-        import json, pip
-        info = next(pip.commands.show.search_packages_info(['$install_name']))
-        info.pop('entry_points', None)
-        print(json.dumps(info))
-        EOF
-        }}
-        if install_cmd >{log.name}; then
-            show_cmd
-        else
-            pip install numpy >/dev/null
-            echo numpy >>{more_requires_log.name}
-            install_cmd >{log.name}
-            show_cmd
-        fi
         """).format(
             venvdir=venvdir,
             setup_requires=" ".join(setup_requires),
