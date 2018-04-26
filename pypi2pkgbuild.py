@@ -267,7 +267,8 @@ def _run_shell(args, **kwargs):
                       # locales, outputs cannot be parsed.
                       "LC_ALL": "en_US.utf8",
                       "PYTHONNOUSERSITE": "1",
-                      "PIP_CONFIG_FILE": "/dev/null"},
+                      "PIP_CONFIG_FILE": "/dev/null",
+                      "PIP_DISABLE_PIP_VERSION_CHECK": "1"},
               "check": True,
               "universal_newlines": True,
               **kwargs}
@@ -333,7 +334,7 @@ class WheelInfo(
         elif len(parts) == 6:
             name, version, build, python, abi, platform = parts
         else:
-            raise ValueError("Invalid wheel url: {}".format(url))
+            raise ValueError(f"Invalid wheel url: {url}")
         return cls(name, version, build, python, abi, platform)
 
 
@@ -360,8 +361,8 @@ def _get_url_impl(url):
         except CalledProcessError:
             # pypa/pip#1884: download can "fail" due to buggy setup.py (e.g.
             # astropy 1.3.3).
-            raise PackagingError("Failed to download {}, possibly due to a "
-                                 "buggy setup.py".format(parsed.netloc))
+            raise PackagingError(f"Failed to download {parsed.netloc}, "
+                                 "possibly due to a buggy setup.py")
     else:
         Path(cache_dir.name, Path(parsed.path).name).write_bytes(
             urllib.request.urlopen(url).read())
@@ -473,8 +474,7 @@ def _get_metadata(name, setup_requires):
             process = _run_shell(script, stdout=PIPE)
         except CalledProcessError:
             sys.stderr.write(log.read())
-            raise PackagingError(
-                "Failed to obtain metadata for {}.".format(name))
+            raise PackagingError(f"Failed to obtain metadata for {name}.")
         more_requires = more_requires_log.read().splitlines()
     metadata = json.loads(process.stdout)
     metadata["requires"].extend(more_requires)
@@ -559,7 +559,7 @@ def _get_info(name, *,
         return request
 
     for source in _sources:
-        info = locals()["_get_info_{}".format(source)]()
+        info = locals()[f"_get_info_{source}"]()
         if info:
             return info
     else:
@@ -595,16 +595,15 @@ def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
         if pkgname.endswith("-git"):
             expected_conflict = pkgname[:-len("-git")]
             if _run_shell(
-                    "pacman -Qi {} 2>/dev/null | "
-                    "grep -q 'Conflicts With *: {}$'"
-                    .format(pkgname, expected_conflict),
+                    f"pacman -Qi {pkgname} 2>/dev/null | "
+                    f"grep -q 'Conflicts With *: {expected_conflict}$'",
                     check=False).returncode == 0:
                 pkgname = pkgname[:-len("-git")]
             else:
                 raise PackagingError(
-                    "Found installed package {} which does NOT conflict with "
-                    "{}.  Please uninstall it first."
-                    .format(pkgname, expected_conflict))
+                    f"Found installed package {pkgname} which does NOT "
+                    f"conflict with {expected_conflict}; please uninstall it "
+                    f"first.")
         if ignore_vendored and pkgname.startswith("python--"):
             return
         else:
@@ -665,7 +664,7 @@ class PackageRef:
         self.pep503_name = distlib_normalize_name(self.pypi_name)
 
         if subpkg_of:
-            pkgname = "python--{}".format(self.pep503_name)
+            pkgname = f"python--{self.pep503_name}"
             depname = subpkg_of.pkgname
             arch_version = None
 
@@ -683,7 +682,7 @@ class PackageRef:
             installed = _find_installed_name_version(
                 self.pep503_name, ignore_vendored=True)
             arch = _find_arch_name_version(self.pep503_name)
-            default = "python-{}".format(self.pep503_name), None
+            default = f"python-{self.pep503_name}", None
             pkgname, arch_version = installed or arch or default
             depname, _ = arch or installed or default
 
@@ -788,9 +787,8 @@ class _BasePackage(ABC):
         # `pkgver()` may update the PKGBUILD, so reread it.
         pkgbuild_contents = (cwd / "PKGBUILD").read_text()
         # Binary dependencies.
-        extra_deps_re = (
-            "(?<=^{} E: Dependency ).*(?= detected and not included)"
-            .format(self.pkgname))
+        extra_deps_re = (f"(?<=^{self.pkgname} "
+                         "E: Dependency ).*(?= detected and not included)")
         extra_deps = [
             match.group(0)
             for match in map(re.compile(extra_deps_re).search, namcap)
@@ -802,14 +800,11 @@ class _BasePackage(ABC):
             needs_rebuild = True
         # Unexpected arch-dependent package (e.g. direct compilation of C
         # source).
-        any_arch_re = "^{} E: ELF file .* found in an 'any' package.".format(
-            self.pkgname)
+        any_arch_re = (f"^{self.pkgname} "
+                       "E: ELF file .* found in an 'any' package.")
         if any(re.search(any_arch_re, line) for line in namcap):
             pkgbuild_contents = re.sub(
-                "(?m)^arch=.*$",
-                "arch=({})".format(THIS_ARCH),
-                pkgbuild_contents,
-                1)
+                "(?m)^arch=.*$", f"arch=({THIS_ARCH})", pkgbuild_contents, 1)
             needs_rebuild = True
         if needs_rebuild:
             # Remove previous package, repackage, and get new name (arch may
@@ -829,7 +824,7 @@ class _BasePackage(ABC):
                 r"\|Unused shared library '/usr/lib/libpthread\.so\.0'\)"
             "\"", cwd=cwd, stdout=PIPE, check=False).stdout
         print(namcap_report)
-        if re.search(f"^{fullpath.name} E: ".format(), namcap_report):
+        if re.search(f"^{fullpath.name} E: ", namcap_report):
             raise PackagingError("namcap found a problem with the package.")
         _run_shell("namcap PKGBUILD", cwd=cwd)
         _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
@@ -851,17 +846,19 @@ class Package(_BasePackage):
             ref.info["urls"], options.pkgtypes)
         if not self._urls:
             raise PackagingError(
-                "No URL available for package {}.".format(self.pkgname))
+                f"No URL available for package {self.pkgname}.")
 
         self._find_arch_and_makedepends(options)
         for dep in self._makedepends:
-            _run_shell("if ! pacman -Q {0} >/dev/null 2>&1; then "
-                       "sudo pacman -S --asdeps {0}; fi".format(dep.pkgname),
-                       verbose=True)
+            if _run_shell(f"pacman -Q {dep.pkgname} >/dev/null 2>&1",
+                          check=False).returncode:
+                # Only log this as needed, to not spam messages about pip.
+                _run_shell(f"sudo pacman -S --asdeps {dep.pkgname}",
+                           verbose=True)
         self._extract_setup_requires()
 
         metadata = _get_metadata(
-            "{}=={}".format(ref.orig_name, self.pkgver)
+            f"{ref.orig_name}=={self.pkgver}"
             if urllib.parse.urlparse(ref.orig_name).scheme == ""
             else ref.orig_name,
             self._makedepends.pep503_names)
@@ -1016,7 +1013,7 @@ class Package(_BasePackage):
                         {**TROVE_COMMON_LICENSES,
                          **TROVE_SPECIAL_LICENSES}[license_class])
                 except KeyError:
-                    licenses.append("custom:{}".format(license_class))
+                    licenses.append(f"custom:{licence_class}")
         elif info["license"] not in [None, "UNKNOWN"]:
             licenses.append("custom:{}".format(info["license"]))
         else:
@@ -1120,7 +1117,7 @@ class Package(_BasePackage):
         except TypeError:  # name, version = None
             return ""
         else:
-            return "{}={}".format(name, self.pkgver)
+            return f"{name}={self.pkgver}"
 
     def write_deps_to(self, options):
         for ref in self._depends:
@@ -1234,8 +1231,7 @@ def find_outdated():
                     "pip thinks that %s is outdated, but the installed "
                     "version is actually %s, and up-to-date.", name, pypi_ver)
                 continue
-            owners.setdefault("{} {}".format(pkgname, arch_version),
-                              []).append(line)
+            owners.setdefault(f"{pkgname} {arch_version}", []).append(line)
     owners = OrderedDict(sorted(owners.items()))
     for owner, lines in owners.items():
         print(owner)
@@ -1276,7 +1272,7 @@ def main():
                "multiple times; an empty value can be used to strip out "
                "values passed so far.")
     parser.add_argument("--version", action="version",
-                        version="%(prog)s {}".format(__version__))
+                        version=f"%(prog)s {__version__}")
     parser.add_argument(
         "names", metavar="name", nargs="*",
         help="The PyPI package names.")
@@ -1360,7 +1356,7 @@ def main():
     # Dependency checking needs to happen after logging is configured.
     for cmd in ["namcap", "pkgfile"]:
         if shutil.which(cmd) is None:
-            parser.error("Missing dependency: {}".format(cmd))
+            parser.error(f"Missing dependency: {cmd}")
     try:
         _run_shell("pkgfile pkgfile >/dev/null")
     except CalledProcessError:
