@@ -40,7 +40,7 @@ except (ImportError, LookupError):
     try:
         __version__ = pkg_resources.get_distribution("pypi2pkgbuild").version
     except pkg_resources.DistributionNotFound:
-        pass
+        __version__ = "(unknown version)"
 
 
 LOGGER = logging.getLogger(Path(__file__).stem)
