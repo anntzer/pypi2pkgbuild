@@ -449,12 +449,11 @@ def _get_metadata(name, setup_requires):
                 fi
             }}
             show_cmd() {{
-                python <<EOF
-            import json, pip
-            info = next(
-                pip.commands.show.search_packages_info(['$install_name']))
-            info.pop('entry_points', None)
-            print(json.dumps(info))
+                python - "$(pip show "$install_name")" <<EOF
+            from email.parser import Parser
+            import json
+            import sys
+            print(json.dumps(dict(Parser().parsestr(sys.argv[1]))))
             EOF
             }}
             if install_cmd >{log.name}; then
@@ -478,8 +477,10 @@ def _get_metadata(name, setup_requires):
             sys.stderr.write(log.read())
             raise PackagingError(f"Failed to obtain metadata for {name}.")
         more_requires = more_requires_log.read().splitlines()
-    metadata = json.loads(process.stdout)
-    metadata["requires"].extend(more_requires)
+    metadata = {k.lower(): v for k, v in json.loads(process.stdout).items()}
+    metadata["requires"] = [
+        *(metadata["requires"].split(", ") if metadata["requires"] else []),
+        *more_requires]
     return {key.replace("-", "_"): value for key, value in metadata.items()}
 
 
