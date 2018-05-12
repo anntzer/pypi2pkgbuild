@@ -1,8 +1,9 @@
 PyPI2PKGBUILD
 =============
 
-Convert PyPI packages to Arch Linux packages, inspired from
-`pip2arch <https://github.com/bluepeppers/pip2arch>`_.
+Convert PyPI packages to Arch Linux packages, inspired from pip2arch_.
+
+.. _pip2arch: https://github.com/bluepeppers/pip2arch
 
 Handles packages of all sizes, from the simplest (pure Python, no dependencies)
 to the most complex (C-level dependencies, external C libraries, etc., e.g.
@@ -16,10 +17,12 @@ wxPython) [#]_.
 Dependencies and installation
 -----------------------------
 
-``pypi2pkgbuild.py`` depends on the Arch Linux packages
-`namcap <https://wiki.archlinux.org/index.php/Namcap>`_,
-`pkgfile <https://wiki.archlinux.org/index.php/Pkgfile>`_ and
-`python-pip <https://wiki.archlinux.org/index.php/Python#Package_management>`_.
+``pypi2pkgbuild.py`` depends on the Arch Linux packages namcap_, pkgfile_, and
+python-pip_.
+
+.. _namcap: https://wiki.archlinux.org/index.php/Namcap
+.. _pkgfile: https://wiki.archlinux.org/index.php/Pkgfile
+.. _python-pip: https://wiki.archlinux.org/index.php/Python#Package_management
 
 **NOTE**: Due to the internals refactor in pip 10, ``pypi2pkgbuild.py`` will
 only support pip 10 once Arch Linux publishes a ``python-pip 10`` package.
@@ -214,5 +217,7 @@ Comparison with fpm
 ```````````````````
 
 Another tool for converting PyPI packages to Arch Linux packages is the generic
-converter `fpm <https://github.com/jordansissel/fpm>`; however, it seems to be
-incompatible with recent versions of ``pip``.
+converter fpm_; however, it seems to be incompatible with recent versions of
+``pip``.
+
+.. _fpm: https://github.com/jordansissel/fpm
