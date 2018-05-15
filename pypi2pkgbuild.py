@@ -64,9 +64,13 @@ TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
         "Apache",
     "Artistic License":
         "Artistic2.0",
+    "Boost Software License 1.0 (BSL-1.0)":
+        "Boost",
     # "CCPL",
-    # "CDDL",
-    # "EPL",
+    "Common Development and Distribution License 1.0 (CDDL-1.0)":
+        "CDDL",
+    "Eclipse Public License 1.0 (EPL-1.0)":
+        "EPL",
     # "FDL1.2",  # See FDL1.3.
     "GNU Free Documentation License (FDL)":
         "FDL1.3",
@@ -94,8 +98,7 @@ TROVE_COMMON_LICENSES = {  # Licenses provided by base `licenses` package.
     "Mozilla Public License 1.1 (MPL 1.1)":
         "MPL",
     "Mozilla Public License 2.0 (MPL 2.0)":
-        # Technically different, but Arch itself marks e.g. Firefox as "MPL".
-        "MPL",
+        "MPL2",
     # "PerlArtistic",  # See Artistic2.0.
     # "PHP",
     "Python Software Foundation License":
@@ -1016,7 +1019,7 @@ class Package(_BasePackage):
                         {**TROVE_COMMON_LICENSES,
                          **TROVE_SPECIAL_LICENSES}[license_class])
                 except KeyError:
-                    licenses.append(f"custom:{licence_class}")
+                    licenses.append(f"custom:{license_class}")
         elif info["license"] not in [None, "UNKNOWN"]:
             licenses.append("custom:{}".format(info["license"]))
         else:
