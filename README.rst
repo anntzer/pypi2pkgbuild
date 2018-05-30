@@ -27,6 +27,9 @@ python-pip_.
 **NOTE**: Due to the internals refactor in pip 10, ``pypi2pkgbuild.py`` will
 only support pip 10 once Arch Linux publishes a ``python-pip 10`` package.
 
+**NOTE**: Only pacman 5.1 is currently supported (due to a change in the
+behavior of ``--printsrcinfo`` between 5.0 and 5.1).
+
 The script can be installed with ``pip install [--user] .``, or can also be run
 directly.
 

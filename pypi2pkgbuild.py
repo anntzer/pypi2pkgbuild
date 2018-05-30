@@ -302,7 +302,7 @@ def get_makepkg_conf():
             pkgver=0
             pkgrel=0
             arch=(any)
-            prepare() { printf "%s\\0%s" "$PACKAGER" "$PKGEXT"; exit 0; }
+            prepare() { printf "%s" "$PACKAGER"; exit 0; }
         """)
         Path(tmpdir, "PKGBUILD").write_text(mini_pkgbuild)
         try:
@@ -311,8 +311,8 @@ def get_makepkg_conf():
         except CalledProcessError as e:
             sys.stderr.write(e.stderr)
             raise
-        packager, pkgext = out.split("\0")
-    return {"PACKAGER": packager, "PKGEXT": pkgext}
+        packager = out
+    return {"PACKAGER": packager}
 
 
 class ArchVersion(namedtuple("_ArchVersion", "epoch pkgver pkgrel")):
@@ -780,10 +780,8 @@ class _BasePackage(ABC):
         _run_shell(cmd, cwd=cwd)
 
         def _get_fullpath():
-            return Path(cwd,
-                        _run_shell("makepkg --packagelist",
-                                   cwd=cwd, stdout=PIPE).stdout
-                        + get_makepkg_conf()["PKGEXT"])
+            return Path(_run_shell("makepkg --packagelist",
+                                   cwd=cwd, stdout=PIPE).stdout)
 
         fullpath = _get_fullpath()
         # Update PKGBUILD.
@@ -975,6 +973,7 @@ class Package(_BasePackage):
                 r"makepkg --printsrcinfo | "
                 r"grep -Po '(?<=^\tmakedepends = ).*'",
                 env={**os.environ,
+                     "LIBMAKEPKG_LINT_PKGBUILD_PKGNAME_SH": "1",
                      "LIBMAKEPKG_LINT_PKGBUILD_PKGVER_SH": "1",
                      "LIBMAKEPKG_LINT_PKGBUILD_PKGREL_SH": "1"},
                 cwd=tmpdir, stdout=PIPE, check=False).stdout
