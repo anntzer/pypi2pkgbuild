@@ -211,6 +211,7 @@ _build() {
     fi
     # Build the wheel (which can fail) only after fetching the license.
     pip wheel -v --no-deps --wheel-dir="$srcdir" \\
+        --global-option=--no-user-cfg \\
         --global-option=build --global-option=-j"$(nproc)" . ||
         true
 }
