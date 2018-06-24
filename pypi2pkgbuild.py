@@ -990,14 +990,14 @@ class Package(_BasePackage):
                     self._get_sdist_url(), options.guess_makedepends)))
         with TemporaryDirectory() as tmpdir:
             Path(tmpdir, "PKGBUILD").write_text(
-                self.get_pkgbuild_extras(options))
+                # makepkg always requires that these three variables are set.
+                f"pkgname={self.pkgname}\n"
+                f"pkgver={self.pkgver}\n"
+                f"pkgrel={self.pkgrel}\n"
+                + self.get_pkgbuild_extras(options))
             extra_makedepends = _run_shell(
                 r"makepkg --printsrcinfo | "
                 r"grep -Po '(?<=^\tmakedepends = ).*'",
-                env={**os.environ,
-                     "LIBMAKEPKG_LINT_PKGBUILD_PKGNAME_SH": "1",
-                     "LIBMAKEPKG_LINT_PKGBUILD_PKGVER_SH": "1",
-                     "LIBMAKEPKG_LINT_PKGBUILD_PKGREL_SH": "1"},
                 cwd=tmpdir, stdout=PIPE, check=False).stdout
             if extra_makedepends:
                 self._makedepends = DependsTuple(
