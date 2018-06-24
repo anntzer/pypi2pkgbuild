@@ -39,8 +39,8 @@ Issues
 Arch packaging
 ==============
 
-- Some packages are installed without an ``.egg-info`` (e.g. ``entrypoints``,
-  ``PyQt5``) and thus not seen by ``pip list --outdated`` (and thus
+- Some packages are installed without an ``.egg-info`` (e.g. ``entrypoints``)
+   and thus not seen by ``pip list --outdated`` (and thus
   ``pypi2pkgbuild.py -o``).
 
 Other mispackaged packages

@@ -41,8 +41,9 @@ except (ImportError, LookupError):
 
 LOGGER = logging.getLogger(Path(__file__).stem)
 
-PY_TAGS = ["py2.py3",
-           "py{0.major}".format(sys.version_info),
+PY_TAGS = ["py{0.major}".format(sys.version_info),
+           "cp{0.major}".format(sys.version_info),
+           "py{0.major}{0.minor}".format(sys.version_info),
            "cp{0.major}{0.minor}".format(sys.version_info)]
 PLATFORM_TAGS = {
     "any": "any", "manylinux1_i686": "i686", "manylinux1_x86_64": "x86_64"}
@@ -326,18 +327,19 @@ class ArchVersion(namedtuple("_ArchVersion", "epoch pkgver pkgrel")):
 
 
 class WheelInfo(
-        namedtuple("_WheelInfo", "name version build python abi platform")):
+        namedtuple("_WheelInfo", "name version build pythons abi platform")):
     @classmethod
     def parse(cls, url):
         parts = Path(urllib.parse.urlparse(url).path).stem.split("-")
         if len(parts) == 5:
-            name, version, python, abi, platform = parts
+            name, version, pythons, abi, platform = parts
             build = ""
         elif len(parts) == 6:
-            name, version, build, python, abi, platform = parts
+            name, version, build, pythons, abi, platform = parts
         else:
             raise ValueError(f"Invalid wheel url: {url}")
-        return cls(name, version, build, python, abi, platform)
+        return cls(
+            name, version, build, set(pythons.split(".")), abi, platform)
 
 
 # Copy-pasted from PEP503.
@@ -927,7 +929,7 @@ class Package(_BasePackage):
         for url in unfiltered_urls:
             if url["packagetype"] == "bdist_wheel":
                 wheel_info = WheelInfo.parse(url["url"])
-                if wheel_info.python not in PY_TAGS:
+                if not wheel_info.pythons.intersection(PY_TAGS):
                     continue
                 try:
                     order = pkgtypes.index(
