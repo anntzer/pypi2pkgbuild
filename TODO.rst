@@ -26,6 +26,8 @@ Issues
 - ``scipy`` fails to build, probably due to numpy/numpy#7779 (``LDFLAGS``
   set by ``makepkg`` strips defaults).  Setting ``LDFLAGS`` to ``"$(.
   /etc/makepkg.conf; echo $LDFLAGS) -shared"`` does not seem to help, though.
+  **NOTE:** This may possibly be fixed using the ``NPY_DISTUTILS_APPEND_FLAG``
+  environment variable on numpy≥1.16.
 
 - ``fpm`` adds a ``get_metadata`` command to avoid having to install the
   package but this can't be done with e.g. wheels.  Perhaps we could hook
@@ -35,6 +37,11 @@ Issues
   ``guess-makedepends`` by adding shim files to the environment that check
   whether they are accessed.  A similar strategy can be used e.g. for swig,
   pybind11.
+
+- Investigate placement of ``/etc`` under ``/share`` or not
+  (``widgetsnbextension`` does it right, not ``plotly``, but it's unclear why).
+  Also consider auto-moving this directory to the right place; other similar
+  cases: ``tqdm`` (currently special-cased).
 
 Arch packaging
 ==============

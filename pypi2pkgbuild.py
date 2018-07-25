@@ -757,8 +757,12 @@ class DependsTuple(tuple):  # Keep it hashable.
             return super().__format__(fmt)  # Raise TypeError.
 
 
+BuildCacheEntry = namedtuple(
+    "BuildCacheEntry", "pkgname path is_dep namcap_report")
+
+
 class _BasePackage(ABC):
-    build_cache = OrderedDict() # package_name: (package path, is_dep)
+    build_cache = []
 
     def __init__(self):
         self._files = OrderedDict()
@@ -839,22 +843,31 @@ class _BasePackage(ABC):
             (cwd / "PKGBUILD").write_text(pkgbuild_contents)
             _run_shell("makepkg --force --repackage --nodeps", cwd=cwd)
             fullpath = _get_fullpath()
-        # Python dependencies always get misanalyzed so we just filter them
-        # away.  Extension modules unconditionally link to `libpthread` (see
-        # output of `python-config --libs`) so filter that away too.  It would
-        # be preferable to use a `namcap` option instead, though.
-        namcap_report = _run_shell(
+        namcap_pkgbuild_report = _run_shell(
+            "namcap PKGBUILD", cwd=cwd, stdout=PIPE, check=False).stdout
+        # Suppressed namcap warnings (may be better to do this via a namcap
+        # option?):
+        # - Python dependencies always get misanalyzed; filter them away.
+        # - Dependencies match install_requires + whatever namcap wants us to
+        #   add, so suppress warning about redundant transitive dependencies.
+        # - Extension modules unconditionally link to `libpthread` (see
+        #   output of `python-config --libs`); filter that away.
+        namcap_package_report = _run_shell(
             f"namcap {fullpath.name} | "
             f"grep -v \"^{self.pkgname} W: "
                 r"\(Dependency included and not needed"
-                r"\|Unused shared library '/usr/lib/libpthread\.so\.0'\)"
+                r"\|Dependency .* included but already satisfied$"
+                r"\|Unused shared library '/usr/lib/libpthread\.so\.0' by\)"
             "\"", cwd=cwd, stdout=PIPE, check=False).stdout
-        print(namcap_report)
-        if re.search(f"^{fullpath.name} E: ", namcap_report):
+        namcap_report = [
+            line for report in [namcap_pkgbuild_report, namcap_package_report]
+            for line in report.split("\n") if line]
+        if re.search(f"^{fullpath.name} E: ", namcap_package_report):
             raise PackagingError("namcap found a problem with the package.")
-        _run_shell("namcap PKGBUILD", cwd=cwd)
         _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
-        type(self).build_cache[self.pkgname] = (fullpath, options.is_dep)
+        type(self).build_cache.append(BuildCacheEntry(
+            self.pkgname, fullpath, options.is_dep, namcap_report))
+        # FIXME Suppress message about redundancy of 'python' dependency.
 
 
 class Package(_BasePackage):
@@ -1430,15 +1443,17 @@ def main():
             LOGGER.error("%s", exc)
             return 1
 
-    cmd = ""
+    print("\n".join(line for cache_entry in Package.build_cache
+                    for line in cache_entry.namcap_report))
+
     if install and Package.build_cache:
-        cmd += "pacman -U{} {} {}".format(
+        cmd = "pacman -U{} {} {}".format(
             "" if args.build_deps else "dd",
             pacman_opts,
-            " ".join(shlex.quote(str(fpath))
-                     for fpath, is_dep in Package.build_cache.values()))
-        deps = [name for name, (fpath, is_dep) in Package.build_cache.items()
-                if is_dep]
+            " ".join(shlex.quote(str(cache_entry.path))
+                     for cache_entry in Package.build_cache))
+        deps = [cache_entry.pkgname for cache_entry in Package.build_cache
+                if cache_entry.is_dep]
         if deps:
             cmd += "; pacman -D --asdeps {}".format(" ".join(deps))
         cmd = "sudo sh -c {}".format(shlex.quote(cmd))
