@@ -210,7 +210,7 @@ _build() {
             fi
         done
     fi
-    # Build the wheel (which can fail) only after fetching the license.
+    # Build the wheel (which we allow to fail) only after fetching the license.
     pip wheel -v --no-deps --wheel-dir="$srcdir" \\
         --global-option=--no-user-cfg \\
         --global-option=build --global-option=-j"$(nproc)" . ||
@@ -270,7 +270,8 @@ def _run_shell(args, **kwargs):
                       "LC_ALL": "en_US.utf8",
                       "PYTHONNOUSERSITE": "1",
                       "PIP_CONFIG_FILE": "/dev/null",
-                      "PIP_DISABLE_PIP_VERSION_CHECK": "1"},
+                      "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+                      **kwargs.pop("env", {})},
               "check": True,
               "universal_newlines": True,
               **kwargs}
@@ -296,12 +297,15 @@ def _run_shell(args, **kwargs):
 @lru_cache()
 def get_makepkg_conf():
     with TemporaryDirectory() as tmpdir:
-        mini_pkgbuild = textwrap.dedent("""
+        mini_pkgbuild = textwrap.dedent(r"""
             pkgname=_
             pkgver=0
             pkgrel=0
             arch=(any)
-            prepare() { printf "%s" "$PACKAGER"; exit 0; }
+            prepare() {
+                printf "CFLAGS %s\0CXXFLAGS %s\0PACKAGER %s" \
+                    "$CFLAGS" "$CXXFLAGS" "$PACKAGER"; exit 0;
+            }
         """)
         Path(tmpdir, "PKGBUILD").write_text(mini_pkgbuild)
         try:
@@ -310,8 +314,7 @@ def get_makepkg_conf():
         except CalledProcessError as e:
             sys.stderr.write(e.stderr)
             raise
-        packager = out
-    return {"PACKAGER": packager}
+    return dict(pair.split(" ", 1) for pair in out.split("\0"))
 
 
 class ArchVersion(namedtuple("_ArchVersion", "epoch pkgver pkgrel")):
@@ -497,7 +500,15 @@ def _get_metadata(name, setup_requires):
             more_requires_log=more_requires_log,
             log=log)
         try:
-            process = _run_shell(script, stdout=PIPE)
+            process = _run_shell(
+                script, stdout=PIPE, env={
+                    # Matters, as a built wheel would get cached.
+                    "CFLAGS": get_makepkg_conf()["CFLAGS"],
+                    # Not actually used, per pypa/setuptools#1192.  Still
+                    # relevant for packages that ship their own autoconf-based
+                    # builds, e.g. wxPython.
+                    "CXXFLAGS": get_makepkg_conf()["CXXFLAGS"],
+                })
         except CalledProcessError:
             sys.stderr.write(log.read())
             raise PackagingError(f"Failed to obtain metadata for {name}.")
