@@ -1,4 +1,0 @@
-# python-hmmlearn
-# Missing dependency, fixed in master.
-depends+=('python-scikit-learn')
-# vim: set ft=PKGBUILD :
