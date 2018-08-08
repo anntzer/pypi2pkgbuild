@@ -477,7 +477,7 @@ def _get_metadata(name, setup_requires):
                 fi
             }}
             show_cmd() {{
-                python - "$(pip show "$install_name")" <<EOF
+                python - "$(pip show -v "$install_name")" <<EOF
             from email.parser import Parser
             import json
             import sys
@@ -517,6 +517,7 @@ def _get_metadata(name, setup_requires):
     metadata["requires"] = [
         *(metadata["requires"].split(", ") if metadata["requires"] else []),
         *more_requires]
+    metadata["classifiers"] = metadata["classifiers"].split("\n  ")[1:]
     return {key.replace("-", "_"): value for key, value in metadata.items()}
 
 
