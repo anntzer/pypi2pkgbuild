@@ -120,6 +120,9 @@ TROVE_SPECIAL_LICENSES = {  # Standard licenses with specific line.
 PKGBUILD_HEADER = """\
 # Maintainer: {config[PACKAGER]}
 
+export PIP_CONFIG_FILE=/dev/null
+export PIP_DISABLE_PIP_VERSION_CHECK=true
+
 pkgname={pkg.pkgname}
 epoch={pkg.epoch}
 pkgver={pkg.pkgver}
@@ -161,18 +164,15 @@ md5sums+=({md5s})
 """
 
 PKGBUILD_CONTENTS = """\
-if [[ ${source[0]} =~ ^git+ ]]; then
-    provides+=("${pkgname%-git}")
-    conflicts+=("${pkgname%-git}")
-fi
-
-export PIP_CONFIG_FILE=/dev/null
-export PIP_DISABLE_PIP_VERSION_CHECK=true
-
 _first_source() {
     echo " ${source_i686[@]} ${source_x86_64[@]} ${source[@]}" |
         tr ' ' '\\n' | grep -Pv '^(PKGBUILD_EXTRAS)?$' | head -1
 }
+
+if [[ $(_first_source) =~ ^git+ ]]; then
+    provides+=("${pkgname%-git}")
+    conflicts+=("${pkgname%-git}")
+fi
 
 _is_wheel() {
     [[ $(_first_source) =~ \\.whl$ ]]
