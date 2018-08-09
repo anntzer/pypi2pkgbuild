@@ -71,7 +71,7 @@ Usage notes
 
 .. code-block:: sh
 
-    alias pypi2pkgbuild.py='PKGEXT=.pkg.tar pypi2pkgbuild.py -g cython -b /tmp/pypi2pkgbuild/ -f'
+   alias pypi2pkgbuild.py='PKGEXT=.pkg.tar pypi2pkgbuild.py -g cython -b /tmp/pypi2pkgbuild/ -f'
 
 - By default, the ``pkgrel`` of (standard) packages is set to ``00``.  This
   allows automatic upgrading into official packages (and AUR ones, if an AUR
@@ -184,8 +184,21 @@ easily install everything by ``cd``'ing there and running
 
 .. code-block:: sh
 
-    $ sudo pacman -U --asdeps **/*.xz
-    $ sudo pacman -D --asexplicit $pkgname/$pkgname.tar.xz
+   $ sudo pacman -U --asdeps **/*.xz
+   $ sudo pacman -D --asexplicit $pkgname/$pkgname.tar.xz
+
+Handling Python upgrades
+------------------------
+
+When the Python minor version (``x`` in ``3.x``) is upgraded, it is necessary
+to regenerate all self-built packages.  This can be done e.g. with
+
+.. code-block:: sh
+
+   $ pypi2pkgbuild.py $(
+        ls /usr/lib/python3.$oldver/site-packages |
+        grep -Po '.*(?=-.*.dist-info)'
+     )
 
 Comparison with other tools
 ---------------------------
