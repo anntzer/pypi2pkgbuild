@@ -1,4 +1,3 @@
 # python-vapory
-# Binary dependency.
 depends+=('povray')
 # vim: set ft=PKGBUILD :

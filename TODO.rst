@@ -72,7 +72,7 @@ Other mispackaged packages
 
 - Packages that install system-level (e.g., systemd) scripts:
 
-  - ``sftpman``.
+  - ``sftpman`` (explicitly unsupported via ``sftpman.PKGBUILD_EXTRAS``).
 
 - Packages vendored into non-Python packages (could be partially detected from
   nonmatching versions):

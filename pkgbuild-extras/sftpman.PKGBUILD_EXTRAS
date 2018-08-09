@@ -1,0 +1,7 @@
+# sftpman
+cat <<'EOF'
+sftpman is actively maintained on the AUR; use that package to correctly
+install the systemd and pm scripts.
+EOF
+return 1
+# vim: set ft=PKGBUILD :

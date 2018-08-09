@@ -1,4 +1,3 @@
 # python-yep
-# ctypes dependency.
 depends+=('gperftools')
 # vim: set ft=PKGBUILD :
