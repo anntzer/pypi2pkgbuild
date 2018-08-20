@@ -864,12 +864,14 @@ class _BasePackage(ABC):
         #   add, so suppress warning about redundant transitive dependencies.
         # - Extension modules unconditionally link to `libpthread` (see
         #   output of `python-config --libs`); filter that away.
+        # - Extension modules appear to never be PIE?
         namcap_package_report = _run_shell(
             f"namcap {fullpath.name} | "
             f"grep -v \"^{self.pkgname} W: "
                 r"\(Dependency included and not needed"
                 r"\|Dependency .* included but already satisfied$"
-                r"\|Unused shared library '/usr/lib/libpthread\.so\.0' by\)"
+                r"\|Unused shared library '/usr/lib/libpthread\.so\.0' by"
+                r"\|ELF file .* lacks PIE\.$\)"
             "\"", cwd=cwd, stdout=PIPE, check=False).stdout
         namcap_report = [
             line for report in [namcap_pkgbuild_report, namcap_package_report]
