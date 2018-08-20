@@ -1,6 +1,11 @@
 Issues
 ======
 
+- Due to pypa/setuptools#5429 (devendoring issues with pip), combining an
+  Arch-packaged pip and a ``pypi2pkgbuild.py``-packaged setuptools does not
+  work.  In practice, this means that one should exclude ``setuptools`` from
+  automatic upgrades.
+
 - Packages that are manually vendored (... poorly) by Arch (e.g., previously,
   ``html5lib`` into ``bleach``) cause some issues.  A solution would be to
   actually install the dependencies, check whether the last versions were
