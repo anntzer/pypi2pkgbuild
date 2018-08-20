@@ -1343,11 +1343,11 @@ def main():
         "-o", "--outdated", action="store_true", default=False,
         help="Find outdated packages.")
     parser.add_argument(
-        "-u", "--update", action="store_true", default=False,
+        "-u", "--upgrade", action="store_true", default=False,
         help="Find and build outdated packages.")
     parser.add_argument(
         "-i", "--ignore", metavar="NAME,...", action=CommaSeparatedList,
-        help="Comma-separated list of packages not to be updated.")
+        help="Comma-separated list of packages not to be upgrade.")
     parser.add_argument(
         "-b", "--base-path", type=Path, default=Path(),
         help="Base path where the packages folders are created.")
@@ -1423,23 +1423,23 @@ def main():
         # "error: No repo files found. Please run `pkgfile --update'."
         sys.exit(1)
 
-    outdated, update, ignore, install, pacman_opts = map(
-        vars(args).pop, ["outdated", "update", "ignore", "install", "pacman"])
+    outdated, upgrade, ignore, install, pacman_opts = map(
+        vars(args).pop, ["outdated", "upgrade", "ignore", "install", "pacman"])
 
     if outdated:
         if vars(args).pop("names"):
             parser.error("--outdated should be given with no name.")
         find_outdated()
 
-    elif update:
+    elif upgrade:
         if vars(args).pop("names"):
-            parser.error("--update-outdated should be given with no name.")
+            parser.error("--upgrade-outdated should be given with no name.")
         ignore = {*map(pep503_normalize_name, ignore)}
         names = {pep503_normalize_name(row["name"])
                  for row in sum(find_outdated().values(), [])}
         ignored = ignore & names
         if ignored:
-            LOGGER.info("Ignoring update of %s.", ", ".join(sorted(ignored)))
+            LOGGER.info("Ignoring upgrade of %s.", ", ".join(sorted(ignored)))
         for name in sorted(names - ignore):
             try:
                 create_package(name, Options(**vars(args), is_dep=False))

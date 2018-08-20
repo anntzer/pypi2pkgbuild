@@ -91,7 +91,7 @@ Usage notes
         if [[ "$1" = "-Syu" ]]; then
            # Update, in case some packages moved in or out of the official repos.
            sudo pacman -Sy
-           # Update everything except python packages with pkgver=00 or 99.
+           # Upgrade everything except python packages with pkgver=00 or 99.
            PKGEXT=.pkg.tar command pacaur -Su --ignore \
                  "$(pacman -Qm | grep '^python-.*-\(00\|99\)$' | cut -d' ' -f1 | paste -sd,)"
         else
@@ -172,11 +172,11 @@ a master package that depends on all of them.  The ``pkgrel`` of the master
 package is set to ``$official_pkgrel.99``, so that the package appears more
 recent than the current official version but older than any future official
 version.  All these packages ``conflict`` with all versions of the official
-package (except the newly created package), so updating should work fine when
+package (except the newly created package), so upgrading should work fine when
 the official package is actually updated.
 
 However, dependencies are still expressed using the master package (to avoid
-breakage on update into an official package), so internal dependencies will
+breakage on upgrade into an official package), so internal dependencies will
 appear be circular.
 
 All the packages are placed in a subfolder named ``meta:$pkgname``, so one can
