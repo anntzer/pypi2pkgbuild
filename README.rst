@@ -18,13 +18,16 @@ Dependencies and installation
 -----------------------------
 
 ``pypi2pkgbuild.py`` depends on the Arch Linux packages namcap_, pkgfile_, and
-python-pip_.
+python-pip_ [#]_.
 
 .. _namcap: https://wiki.archlinux.org/index.php/Namcap
 .. _pkgfile: https://wiki.archlinux.org/index.php/Pkgfile
 .. _python-pip: https://wiki.archlinux.org/index.php/Python#Package_management
 
-**NOTE**: Only pacman 5.1 and pip 10 are supported.
+.. [#] Officially, only the latest releases of pacman and pip are supported.
+   In practice, the hard requirements that I am aware of are pacman≥5.1
+   (which changed the behavior of ``makepkg --printsrcinfo``) and pip≥10
+   (which changed the default format of ``pip --list``).
 
 The script can be installed with ``pip install [--user] .``, or can also be run
 directly.
