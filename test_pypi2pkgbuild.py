@@ -15,8 +15,8 @@ def test_build_git(tmpdir):
 
 def test_build_wheel(tmpdir):
     subprocess.run(
-        [sys.executable, "-mpip", "wheel",
-         "-w", str(tmpdir), str(_local_path)],
+        [sys.executable, "-mpip", "wheel", "--no-deps", "-w", str(tmpdir),
+         str(_local_path)],
         check=True)
     wheel_path, = Path(tmpdir).iterdir()
     subprocess.run(
