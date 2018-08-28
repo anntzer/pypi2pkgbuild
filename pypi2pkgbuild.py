@@ -211,7 +211,7 @@ _build() {
         done
     fi
     # Build the wheel (which we allow to fail) only after fetching the license.
-    pip wheel -v --no-deps --wheel-dir="$srcdir" \\
+    /usr/bin/pip wheel -v --no-deps --wheel-dir="$srcdir" \\
         --global-option=--no-user-cfg \\
         --global-option=build --global-option=-j"$(nproc)" . ||
         true
@@ -224,13 +224,13 @@ _check() {
     # You may need to call `python setup.py build_ext -i` first.
     if _is_wheel; then return; fi
     cd "$srcdir/$(_dist_name)"
-    python setup.py -q test
+    /usr/bin/python setup.py -q test
 }
 
 _package() {
     cd "$srcdir"
     # pypa/pip#3063: pip always checks for a globally installed version.
-    pip --quiet install --root="$pkgdir" \\
+    /usr/bin/pip --quiet install --root="$pkgdir" \\
         --no-deps --ignore-installed --no-warn-script-location \\
         "$(ls ./*.whl 2>/dev/null || echo ./"$(_dist_name)")"
     if [[ -f LICENSE ]]; then
@@ -424,7 +424,7 @@ def _get_url_unpacked_path_or_null(url):
 @lru_cache()
 def _guess_url_makedepends(url, guess_makedepends):
     parsed = urllib.parse.urlparse(url)
-    makedepends = [PackageRef("pip")]
+    makedepends = [PackageRef("pip"), PackageRef("wheel")]
     if ("swig" in guess_makedepends
             and list(_get_url_unpacked_path_or_null(url).glob("**/*.i"))):
         makedepends.append(NonPyPackageRef("swig"))
