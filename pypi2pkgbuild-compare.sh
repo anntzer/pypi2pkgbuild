@@ -3,7 +3,7 @@
 # Compare dependencies between installed and automatic packages.
 # First run e.g.
 #     pypi2pkgbuild.py $(pacman -Qm | grep python- | grep -v 00 | grep -v git | cut -d' ' -f1 | cut -d- -f2-)
-# and run this script from the packages-containing folder.
+# and run this script from the packages-containing directory.
 
 for pkgname in *; do
     echo "$(tput bold)$pkgname$(tput sgr0)"

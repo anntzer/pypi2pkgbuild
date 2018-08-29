@@ -65,7 +65,7 @@ patching, the ``build``, ``package``, and, where applicable, ``pkgver``
 functions are defined by forwarding to ``_build``, ``_package``, and
 ``_pkgver``.  A ``_check`` function is also available, but not used (due to the
 lack of standard testing CLI).  Some useful examples of ``PKGBUILD_EXTRAS`` are
-listed in the ``pkgbuild-extras`` folder.
+listed in the ``pkgbuild-extras`` directory.
 
 Usage notes
 ```````````

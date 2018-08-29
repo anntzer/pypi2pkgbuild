@@ -452,7 +452,7 @@ def _get_metadata(name, setup_requires):
         script = textwrap.dedent(r"""
             set -e
             python -mvenv {venvdir}
-            # Don't stay in source folder, which may contain wheels/sdists/etc.
+            # Leave the source directory, which may contain wheels/sdists/etc.
             cd {venvdir}
             . '{venvdir}/bin/activate'
             pip install --upgrade {setup_requires} >/dev/null
@@ -1349,7 +1349,7 @@ def main():
         help="Comma-separated list of packages not to be upgrade.")
     parser.add_argument(
         "-b", "--base-path", type=Path, default=Path(),
-        help="Base path where the packages folders are created.")
+        help="Base path where the packages directories are created.")
     parser.add_argument(
         "-f", "--force", action="store_true",
         help="Overwrite a previously existing PKGBUILD.")

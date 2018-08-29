@@ -21,7 +21,7 @@ Issues
 
 - License support is incomplete.
 
-  - e.g. ``matplotlib`` has a ``LICENSE`` *folder*.
+  - e.g. ``matplotlib`` has a ``LICENSE`` *directory*.
   - get licenses from wheels.
 
 - Meta packages are fully rebuilt even if only a component needs to be built
