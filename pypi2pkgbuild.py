@@ -381,7 +381,7 @@ def _get_url_impl(url):
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme.startswith("git+"):
         _run_shell(["git", "clone", "--recursive", url[4:]],
-                    cwd=cache_dir.name)
+                   cwd=cache_dir.name)
     elif parsed.scheme == "pip":
         try:
             _run_shell(["pip", "download", "--no-deps", "-d", cache_dir.name,
@@ -423,7 +423,6 @@ def _get_url_unpacked_path_or_null(url):
 
 @lru_cache()
 def _guess_url_makedepends(url, guess_makedepends):
-    parsed = urllib.parse.urlparse(url)
     makedepends = [PackageRef("pip"), PackageRef("wheel")]
     if ("swig" in guess_makedepends
             and list(_get_url_unpacked_path_or_null(url).glob("**/*.i"))):
@@ -447,8 +446,8 @@ def _get_metadata(name, setup_requires):
     # To handle sdists that depend on numpy, we just see whether installing in
     # presence of numpy makes things better...
     with TemporaryDirectory() as venvdir, \
-            NamedTemporaryFile("r") as more_requires_log, \
-            NamedTemporaryFile("r") as log:
+         NamedTemporaryFile("r") as more_requires_log, \
+         NamedTemporaryFile("r") as log:
         script = textwrap.dedent(r"""
             set -e
             python -mvenv {venvdir}
