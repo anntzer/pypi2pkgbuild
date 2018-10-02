@@ -991,7 +991,11 @@ class Package(_BasePackage):
         parsed = urllib.parse.urlparse(self._ref.orig_name)
         return (self._ref.orig_name
                 if re.match(r"\A(git\+|file\Z)", parsed.scheme)
-                else "pip://{}=={}#--no-binary=:all:".format(
+                # pypa/pip#1884: pip download will actually run egg_info, thus
+                # install setup_requires, but we don't want to bother e.g.
+                # rebuilding numpy just for getting a sdist.  So, be accurate
+                # when specifying --no-binary.
+                else "pip://{0}=={1}#--no-binary={0}".format(
                     self._ref.pypi_name, self.pkgver))
 
     def _get_pip_url(self):
