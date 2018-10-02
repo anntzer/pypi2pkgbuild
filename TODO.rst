@@ -17,7 +17,7 @@ Issues
 - PyPI packages that depends on another package's ``extra_requires`` are not
   supported (needs upstream support from ``pip show``).
 
-  - ``scikit-image`` depends on ``dask[array]``.
+  - ``scikit-image`` "depends" (... with fallback) on ``dask[array]``.
 
 - License support is incomplete.
 
