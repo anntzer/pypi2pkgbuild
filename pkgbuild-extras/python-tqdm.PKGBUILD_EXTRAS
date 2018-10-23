@@ -2,7 +2,10 @@
 # tqdm>=4.19.1.post1 packages man pages to non-FHS directory (#465).
 package() {
     _package &&
-    mv "$pkgdir/usr/man" "$pkgdir/usr/share/man" ||
+    mkdir -p "$pkgdir/usr/share/man/man1" &&
+    PYTHONPATH="$pkgdir/usr/lib/python3.7/site-packages" \
+        "$pkgdir/usr/bin/tqdm" \
+        --manpath "$pkgdir/usr/share/man/man1" ||
     return 1
 }
 # vim: set ft=PKGBUILD :
