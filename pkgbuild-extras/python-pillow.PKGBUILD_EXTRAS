@@ -1,0 +1,4 @@
+# pillow
+# Arch installs an invalid version of raqm.h (https://bugs.archlinux.org/task/57492).
+pkgrel=99
+# vim: set ft=PKGBUILD :

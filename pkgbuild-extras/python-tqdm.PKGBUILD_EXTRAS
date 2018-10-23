@@ -1,5 +1,7 @@
 # tqdm
-# tqdm>=4.19.1.post1 packages man pages to non-FHS directory (#465).
+# Arch fails to install the man page.
+pkgrel=99
+
 package() {
     _package &&
     mkdir -p "$pkgdir/usr/share/man/man1" &&
