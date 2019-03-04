@@ -924,15 +924,21 @@ class Package(_BasePackage):
 
         stream.write(
             PKGBUILD_HEADER.format(pkg=self, config=get_makepkg_conf()))
+        src_template = None
         if self._urls[0]["packagetype"] == "bdist_wheel":
-            # Either just "any", or some specific archs.
             for url in self._urls:
                 if url["packagetype"] != "bdist_wheel":
                     continue
                 wheel_info = WheelInfo.parse(url["url"])
                 if wheel_info.platform == "any":
+                    # If there is both an any wheel and one or more
+                    # arch-specific wheels, do not mix them up.
+                    if src_template == WHEEL_ARCH_SOURCE:
+                        continue
                     src_template = WHEEL_ANY_SOURCE
                 else:
+                    if src_template == WHEEL_ANY_SOURCE:
+                        continue
                     src_template = WHEEL_ARCH_SOURCE
                 stream.write(src_template.format(
                     arch=PLATFORM_TAGS[wheel_info.platform],
