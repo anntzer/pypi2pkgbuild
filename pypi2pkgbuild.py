@@ -1076,7 +1076,8 @@ class Package(_BasePackage):
                          **TROVE_SPECIAL_LICENSES}[license_class])
                 except KeyError:
                     licenses.append(f"custom:{license_class}")
-        elif info["license"] not in [None, "UNKNOWN"]:
+        # pypa/warehouse#3473: "UNKNOWN" -> "", but not for old pkgs.
+        elif info["license"] not in [None, "", "UNKNOWN"]:
             licenses.append("custom:{}".format(info["license"]))
         else:
             LOGGER.warning("No license information available.")
@@ -1144,6 +1145,7 @@ class Package(_BasePackage):
     epoch = property(
         lambda self:
         self._ref.arch_version.epoch if self._ref.arch_version else "")
+    # NOTE: some metadata can be corrupted due to pypa/setuptools#1390 :/
     pkgver = property(
         lambda self: shlex.quote(self._ref.info["info"]["version"]))
     pkgrel = property(
@@ -1157,7 +1159,8 @@ class Package(_BasePackage):
             next(url for url in [self._ref.info["info"]["home_page"],
                                  self._ref.info["info"]["download_url"],
                                  self._ref.info["info"]["package_url"]]
-                 if url not in [None, "UNKNOWN"])))
+                 # pypa/warehouse#3473: "UNKNOWN" -> "", but not for old pkgs.
+                 if url not in [None, "", "UNKNOWN"])))
     license = property(
         lambda self: " ".join(map(shlex.quote, self._licenses)))
     depends = property(
