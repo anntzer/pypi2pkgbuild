@@ -325,8 +325,8 @@ class ArchVersion(namedtuple("_ArchVersion", "epoch pkgver pkgrel")):
         return cls(epoch or "", pkgver, pkgrel)
 
     def __str__(self):
-        return ("{0.epoch}:{0.pkgver}-{0.pkgrel}" if self.epoch
-                else "{0.pkgver}-{0.pkgrel}").format(self)
+        return (f"{self.epoch}:{self.pkgver}-{self.pkgrel}" if self.epoch
+                else f"{self.pkgver}-{self.pkgrel}")
 
 
 class WheelInfo(
@@ -626,7 +626,7 @@ def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
                 _get_site_packages_location(), to_wheel_name(pep503_name)),
             stdout=PIPE).stdout.split()
         or _run_shell(
-            "pacman -Q python-{} 2>/dev/null".format(pep503_name),
+            f"pacman -Q python-{pep503_name} 2>/dev/null",
             stdout=PIPE, check=False).stdout.split())
     if parts:
         pkgname, version = parts  # This will raise if there is an ambiguity.
@@ -735,7 +735,7 @@ class PackageRef:
 
         # Final values.
         self.pkgname = (
-            "{}-git" if name.startswith("git+") else "{}").format(pkgname)
+            f"{pkgname}-git" if name.startswith("git+") else pkgname)
         # Packages that depend on a vendored package should list the
         # metapackage (which may be otherwise unrelated) as a dependency, so
         # that the metapackage can get updated into an official package without
