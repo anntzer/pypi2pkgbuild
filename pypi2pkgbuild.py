@@ -724,14 +724,14 @@ class PackageRef:
             pkgname, arch_version = installed or arch or default
             depname, _ = arch or installed or default
 
-        arch_packaged = _run_shell(
+        arch_packaged = sorted({*_run_shell(
             "pkgfile -l {} 2>/dev/null | "
             # Package name has no dash (per packaging standard) nor slashes
             # (which can occur when a subpackage is vendored (depending on how
             # it is done), e.g. `.../foo.egg-info` and `.../foo/bar.egg-info`
             # both existing).
             r"grep -Po '(?<=site-packages/)[^-/]*(?=.*\.egg-info/?$)'".
-            format(pkgname), stdout=PIPE, check=False).stdout.splitlines()
+            format(pkgname), stdout=PIPE, check=False).stdout.splitlines()})
 
         # Final values.
         self.pkgname = (
