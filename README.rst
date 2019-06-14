@@ -3,8 +3,6 @@ PyPI2PKGBUILD
 
 Convert PyPI packages to Arch Linux packages, inspired from pip2arch_.
 
-.. _pip2arch: https://github.com/bluepeppers/pip2arch
-
 Handles packages of all sizes, from the simplest (pure Python, no dependencies)
 to the most complex (C-level dependencies, external C libraries, etc., e.g.
 most of the scientific Python stack, or GUI toolkits such as PyGObject and
@@ -206,10 +204,9 @@ to regenerate all self-built packages.  This can be done e.g. with
 Comparison with other tools
 ---------------------------
 
-Comparison with pip2arch
-````````````````````````
-
-``pypi2pkgbuild.py`` includes many improvements over ``pip2arch``:
+Other similar tools include pip2arch_, pip2pkgbuild_, and fpm_.  To the best
+of my knowledge, the features below are unique to PyPI2PKGBUILD; please let me
+know if this is incorrect.
 
 - Supports wheels (the default is to prefer ``any``-platform wheels, then
   ``sdist``\s, then ``manylinux1`` wheels, but this can be changed using
@@ -229,11 +226,6 @@ Comparison with pip2arch
   and run ``namcap``.
 - Automatically builds all outdated dependencies via ``-u``.
 
-Comparison with fpm
-```````````````````
-
-Another tool for converting PyPI packages to Arch Linux packages is the generic
-converter fpm_; however, it seems to be incompatible with recent versions of
-``pip``.
-
+.. _pip2arch: https://github.com/bluepeppers/pip2arch
+.. _pip2pkgbuild: https://github.com/wenLiangcan/pip2pkgbuild
 .. _fpm: https://github.com/jordansissel/fpm
