@@ -18,7 +18,7 @@ setup(
         "Topic :: System :: Software Distribution",
     ],
     package_dir={"": "lib"},
-    python_requires=">=3.6",
+    python_requires=">=3.7",
     setup_requires=["setuptools_scm"],
     use_scm_version=lambda: {  # xref pypi2pkgbuild.py
         "version_scheme": "post-release",

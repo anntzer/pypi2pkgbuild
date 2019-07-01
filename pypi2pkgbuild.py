@@ -273,7 +273,7 @@ def _run_shell(args, **kwargs):
                       "PIP_DISABLE_PIP_VERSION_CHECK": "1",
                       **kwargs.pop("env", {})},
               "check": True,
-              "universal_newlines": True,
+              "text": True,
               **kwargs}
     if "cwd" in kwargs:
         kwargs["cwd"] = str(Path(kwargs["cwd"]))
