@@ -43,10 +43,6 @@ Issues
   whether they are accessed.  A similar strategy can be used e.g. for swig,
   pybind11.
 
-- Investigate placement of ``/etc``, ``/man`` under ``/share`` (``plotly``,
-  ``tqdm``, ``widgetsnbextension``).  Also consider auto-moving this directory
-  to the right place.
-
 Arch packaging
 ==============
 

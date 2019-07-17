@@ -233,6 +233,9 @@ _package() {
     /usr/bin/pip --quiet install --root="$pkgdir" \\
         --no-deps --ignore-installed --no-warn-script-location \\
         "$(ls ./*.whl 2>/dev/null || echo ./"$(_dist_name)")"
+    if [[ -d "$pkgdir/usr/etc" ]]; then
+        mv "$pkgdir/usr/etc" "$pkgdir/etc"
+    fi
     if [[ -f LICENSE ]]; then
         install -D -m644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     fi

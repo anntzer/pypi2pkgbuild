@@ -1,7 +1,0 @@
-# plotly
-package() {
-    _package &&
-        mv "$pkgdir/usr/etc" "$pkgdir/etc" ||
-        return 1
-}
-# vim: set ft=PKGBUILD :
