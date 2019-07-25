@@ -180,7 +180,8 @@ _is_wheel() {
 
 _dist_name() {
     basename "$(_first_source)" |
-      sed 's/\\(""" + re.escape("|".join(SDIST_SUFFIXES)) + """\\|\\.git\\)$//'
+      sed 's/\\(""" + re.escape("|".join(SDIST_SUFFIXES)) + """\\|\\.git\\)$//' |
+      cut -d- -f-2
 }
 
 if [[ $(_first_source) =~ ^git+ ]]; then
@@ -355,6 +356,11 @@ def pep503_normalize_name(name):
 
 def to_wheel_name(pep503_name):
     return pep503_name.replace("-", "_")
+
+
+def gen_ver_cmp_operator(ver):
+    # Handle cases where only a post-release is available.
+    return f"=={ver}.*,<{ver}.1"
 
 
 class PackagingError(Exception):
@@ -912,7 +918,7 @@ class Package(_BasePackage):
         self._extract_setup_requires()
 
         metadata = _get_metadata(
-            f"{ref.orig_name}=={self.pkgver}"
+            f"{ref.orig_name}{gen_ver_cmp_operator(self.pkgver)}"
             if urllib.parse.urlparse(ref.orig_name).scheme == ""
             else ref.orig_name,
             self._makedepends.pep503_names)
@@ -1004,14 +1010,15 @@ class Package(_BasePackage):
                 # install setup_requires, but we don't want to bother e.g.
                 # rebuilding numpy just for getting a sdist.  So, be accurate
                 # when specifying --no-binary.
-                else "pip://{0}=={1}#--no-binary={0}".format(
-                    self._ref.pypi_name, self.pkgver))
+                else "pip://{0}{1}#--no-binary={0}".format(
+                    self._ref.pypi_name, gen_ver_cmp_operator(self.pkgver)))
 
     def _get_pip_url(self):
         parsed = urllib.parse.urlparse(self._ref.orig_name)
-        return (self._ref.orig_name
-                if re.match(r"\A(git\+|file\Z)", parsed.scheme)
-                else "pip://{}=={}".format(self._ref.pypi_name, self.pkgver))
+        return (
+            self._ref.orig_name
+            if re.match(r"\A(git\+|file\Z)", parsed.scheme) else
+            f"pip://{self._ref.pypi_name}{gen_ver_cmp_operator(self.pkgver)}")
 
     def _find_arch_and_makedepends(self, options):
         if self._get_first_package_type() == "bdist_wheel":
