@@ -48,7 +48,6 @@ PY_TAGS = ["py{0.major}".format(sys.version_info),
 PLATFORM_TAGS = {
     "any": "any", "manylinux1_i686": "i686", "manylinux1_x86_64": "x86_64"}
 THIS_ARCH = ["i686", "x86_64"][sys.maxsize > 2 ** 32]
-SDIST_SUFFIXES = [".tar.gz", ".tgz", ".tar.bz2", ".zip"]
 LICENSE_NAMES = ["LICENSE", "LICENSE.txt", "license.txt",
                  "COPYING", "COPYING.md", "COPYING.rst", "COPYING.txt",
                  "COPYRIGHT"]
@@ -179,9 +178,7 @@ _is_wheel() {
 }
 
 _dist_name() {
-    basename "$(_first_source)" |
-      sed 's/\\(""" + re.escape("|".join(SDIST_SUFFIXES)) + """\\|\\.git\\)$//' |
-      cut -d- -f-2
+    find "$srcdir" -mindepth 1 -maxdepth 1 -type d -printf %f
 }
 
 if [[ $(_first_source) =~ ^git+ ]]; then
