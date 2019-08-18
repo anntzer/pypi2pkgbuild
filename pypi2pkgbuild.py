@@ -252,13 +252,13 @@ package() {
 
 
 def _unique(seq):
-    """Return unique elements in a sequence, keeping them in order.
-    """
+    """Return unique elements in a sequence, keeping them in order."""
     return list(OrderedDict(zip(list(seq)[::-1], repeat(None))))[::-1]
 
 
 def _run_shell(args, **kwargs):
-    """Logging wrapper for `subprocess.run`, with useful defaults.
+    """
+    Logging wrapper for `subprocess.run`, with useful defaults.
 
     Log at ``DEBUG`` level except if the *verbose* kwarg is set, in which case
     log at ``INFO`` level.
