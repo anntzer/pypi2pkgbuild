@@ -1,6 +1,12 @@
 PyPI2PKGBUILD
 =============
 
+|PyPI|
+
+.. |PyPI|
+   image:: https://img.shields.io/pypi/v/pypi2pkgbuild.svg
+   :target: https://pypi.python.org/pypi/pypi2pkgbuild
+
 Convert PyPI packages to Arch Linux packages, inspired from pip2arch_.
 
 Handles packages of all sizes, from the simplest (pure Python, no dependencies)
