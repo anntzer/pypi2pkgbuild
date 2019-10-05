@@ -79,11 +79,6 @@ Other mispackaged packages
 
   - ``lit`` (vendored into ``llvm``).
 
-- "Weird" ``setup.py``\s:
-
-  - ``pytest-pycodestyle`` (``setup.py`` packages both ``pytest-pycodestyle``
-    and ``pytest-codestyle``).
-
 Note that fixes for some other packages are provided in the ``pkgbuild-extras``
 directory.
 
