@@ -906,7 +906,7 @@ class Package(_BasePackage):
             raise PackagingError(
                 f"No URL available for package {self.pkgname}.")
 
-        self._find_arch_and_makedepends(options)
+        self._find_makedepends(options)
         for dep in self._makedepends:
             if _run_shell(f"pacman -Q {dep.pkgname} >/dev/null 2>&1",
                           check=False).returncode:
@@ -929,9 +929,9 @@ class Package(_BasePackage):
             for req in metadata["requires"])
         self._licenses = self._find_license()
 
-        stream.write(
-            PKGBUILD_HEADER.format(pkg=self, config=get_makepkg_conf()))
+        arches = []
         src_template = None
+        sources = []
         if self._urls[0]["packagetype"] == "bdist_wheel":
             for url in self._urls:
                 if url["packagetype"] != "bdist_wheel":
@@ -942,17 +942,24 @@ class Package(_BasePackage):
                     # arch-specific wheels, do not mix them up.
                     if src_template == WHEEL_ARCH_SOURCE:
                         continue
+                    arches.append("any")
                     src_template = WHEEL_ANY_SOURCE
                 else:
                     if src_template == WHEEL_ANY_SOURCE:
                         continue
+                    arches.append(PLATFORM_TAGS[wheel_info.platform])
                     src_template = WHEEL_ARCH_SOURCE
-                stream.write(src_template.format(
+                sources.append(src_template.format(
                     arch=PLATFORM_TAGS[wheel_info.platform],
                     url=url,
                     name=Path(urllib.parse.urlparse(url["url"]).path).name))
         else:
-            stream.write(SDIST_SOURCE.format(url=self._urls[0]))
+            arches.append("any")
+            sources.append(SDIST_SOURCE.format(url=self._urls[0]))
+        self._arch = sorted({*arches})
+        stream.write(
+            PKGBUILD_HEADER.format(pkg=self, config=get_makepkg_conf()))
+        stream.write("".join(sources))
         stream.write(MORE_SOURCES.format(
             names=" ".join(shlex.quote(name)
                            for name in self._files),
@@ -1018,15 +1025,11 @@ class Package(_BasePackage):
             if re.match(r"\A(git\+|file\Z)", parsed.scheme) else
             f"pip://{self._ref.pypi_name}{gen_ver_cmp_operator(self.pkgver)}")
 
-    def _find_arch_and_makedepends(self, options):
+    def _find_makedepends(self, options):
         if self._get_first_package_type() == "bdist_wheel":
-            self._arch = sorted(
-                {PLATFORM_TAGS[WheelInfo.parse(url["url"]).platform]
-                 for url in self._urls if url["packagetype"] == "bdist_wheel"})
             self._makedepends = DependsTuple(
                 map(PackageRef, ["pip", *options.setup_requires]))
         else:
-            self._arch = ["any"]
             self._makedepends = DependsTuple((
                 *map(PackageRef, options.setup_requires),
                 *_guess_url_makedepends(
