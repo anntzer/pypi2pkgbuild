@@ -138,6 +138,7 @@ provides=({pkg.provides})
 conflicts=(${{provides%=*}})  # No quotes, to avoid an empty entry.
 source=(PKGBUILD_EXTRAS)
 md5sums=(SKIP)
+noextract=()
 """
 
 SDIST_SOURCE = """\
@@ -148,13 +149,13 @@ md5sums+=({url[md5_digest]})
 WHEEL_ANY_SOURCE = """\
 source+=({url[url]})
 md5sums+=({url[md5_digest]})
-noextract=({name})
+noextract+=({name})
 """
 
 WHEEL_ARCH_SOURCE = """\
 source_{arch}=({url[url]})
 md5sums_{arch}=({url[md5_digest]})
-noextract_{arch}=({name})
+noextract+=({name})
 """
 
 MORE_SOURCES = """\
