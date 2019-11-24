@@ -5,7 +5,7 @@ pkgrel=99
 package() {
     _package &&
     mkdir -p "$pkgdir/usr/share/man/man1" &&
-    PYTHONPATH="$pkgdir/usr/lib/python3.7/site-packages" \
+    PYTHONPATH="$(find "$pkgdir" -name site-packages)" \
         "$pkgdir/usr/bin/tqdm" \
         --manpath "$pkgdir/usr/share/man/man1" ||
     return 1
