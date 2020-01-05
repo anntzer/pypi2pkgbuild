@@ -281,7 +281,7 @@ def _run_shell(args, **kwargs):
         kwargs["cwd"] = str(Path(kwargs["cwd"]))
     level = logging.INFO if kwargs.pop("verbose", None) else logging.DEBUG
     args_s = (args if isinstance(args, str)
-              else " ".join(map(shlex.quote, args)))
+              else " ".join(shlex.quote(str(arg)) for arg in args))
     if "cwd" in kwargs:
         LOGGER.log(level,
                    "Running subprocess from %s:\n%s", kwargs["cwd"], args_s)
@@ -824,13 +824,14 @@ class _BasePackage(ABC):
         _run_shell(cmd, cwd=cwd)
 
         def _get_fullpath():
+            # This may be absolute and not in cwd (if PKGDEST is set).
             return Path(_run_shell("makepkg --packagelist",
                                    cwd=cwd, stdout=PIPE).stdout)
 
         fullpath = _get_fullpath()
         # Update PKGBUILD.
         needs_rebuild = False
-        namcap = (_run_shell(["namcap", fullpath.name], cwd=cwd, stdout=PIPE)
+        namcap = (_run_shell(["namcap", fullpath], cwd=cwd, stdout=PIPE)
                   .stdout.splitlines())
         # `pkgver()` may update the PKGBUILD, so reread it.
         pkgbuild_contents = (cwd / "PKGBUILD").read_text()
@@ -872,7 +873,7 @@ class _BasePackage(ABC):
         #   output of `python-config --libs`); filter that away.
         # - Extension modules appear to never be PIE?
         namcap_package_report = _run_shell(
-            f"namcap {fullpath.name} | "
+            f"namcap {shlex.quote(str(fullpath))} | "
             f"grep -v \"^{self.pkgname} W: "
                 r"\(Dependency included and not needed"
                 r"\|Dependency .* included but already satisfied$"
@@ -882,7 +883,7 @@ class _BasePackage(ABC):
         namcap_report = [
             line for report in [namcap_pkgbuild_report, namcap_package_report]
             for line in report.split("\n") if line]
-        if re.search(f"^{fullpath.name} E: ", namcap_package_report):
+        if re.search(f"^{self.pkgname} E: ", namcap_package_report):
             raise PackagingError("namcap found a problem with the package.")
         _run_shell("makepkg --printsrcinfo >.SRCINFO", cwd=cwd)
         type(self).build_cache.append(BuildCacheEntry(
