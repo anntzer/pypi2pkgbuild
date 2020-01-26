@@ -1269,6 +1269,8 @@ class MetaPackage(_BasePackage):
 def dispatch_package_builder(name, options):
     ref = PackageRef(
         name, pre=options.pre, guess_makedepends=options.guess_makedepends)
+    if options.pkgname:
+        ref.pkgname = options.pkgname
     cls = Package if len(ref.arch_packaged) <= 1 else MetaPackage
     return cls(ref, options)
 
@@ -1325,8 +1327,9 @@ def find_outdated():
 
 
 Options = namedtuple(
-    "Options", "base_path force pre pkgrel guess_makedepends setup_requires "
-               "pkgtypes build_deps pkgbuild_extras makepkg is_dep")
+    "Options",
+    "base_path force pre pkgname pkgrel guess_makedepends setup_requires "
+    "pkgtypes build_deps pkgbuild_extras makepkg is_dep")
 
 
 def main():
@@ -1382,6 +1385,9 @@ def main():
         "--pre", action="store_true",
         help="Include pre-releases.")
     parser.add_argument(
+        "-n", "--pkgname",
+        help="Force $pkgname.")
+    parser.add_argument(
         "-r", "--pkgrel", default="00",
         help="Force value of $pkgrel (not applicable to metapackages).  "
              "Set e.g. to 99 to override AUR packages.")
@@ -1400,7 +1406,7 @@ def main():
         default=["anywheel", "sdist", "manylinuxwheel"],
         help="Comma-separated preference order for dists.")
     parser.add_argument(
-        "-d", "--no-deps", action="store_false",
+        "-D", "--no-deps", action="store_false",
         dest="build_deps", default=True,
         help="Don't generate PKGBUILD for dependencies.")
     parser.add_argument(
@@ -1414,7 +1420,7 @@ def main():
         default="--cleanbuild --nodeps",
         help="Additional arguments to pass to `makepkg`.")
     parser.add_argument(
-        "-n", "--no-install", action="store_false",
+        "-I", "--no-install", action="store_false",
         dest="install", default="True",
         help="Don't install the built packages.")
     parser.add_argument(
