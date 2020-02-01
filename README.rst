@@ -54,7 +54,7 @@ in a venv to figure out the dependencies.  Note that thanks to ``pip``'s wheel
 cache, the build is later reused; i.e. the procedure entails very little extra
 work.
 
-A ``-git`` package can be built with ``pypi2pkbguild.py git+https://...``.
+A ``-git`` package can be built with ``pypi2pkgbuild.py git+https://...``.
 
 The package is then built and verified with ``namcap``.
 
