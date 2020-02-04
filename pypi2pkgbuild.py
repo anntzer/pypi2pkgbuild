@@ -162,6 +162,7 @@ md5sums+=({md5s})
 """
 
 PKGBUILD_CONTENTS = """\
+
 _first_source() {
     echo " ${source_i686[@]} ${source_x86_64[@]} ${source[@]}" |
         tr ' ' '\\n' | grep -Pv '^(PKGBUILD_EXTRAS)?$' | head -1
@@ -175,6 +176,11 @@ fi
 _is_wheel() {
     [[ $(_first_source) =~ \\.whl$ ]]
 }
+
+if [[ _is_wheel &&
+      $(basename "$(_first_source)" | rev | cut -d- -f1 | rev) =~ ^manylinux ]]; then
+    options=(!strip)  # https://github.com/pypa/manylinux/issues/119
+fi
 
 _dist_name() {
     find "$srcdir" -mindepth 1 -maxdepth 1 -type d -printf %f
