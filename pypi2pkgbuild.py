@@ -45,8 +45,6 @@ PY_TAGS = ["py{0.major}".format(sys.version_info),
            "cp{0.major}".format(sys.version_info),
            "py{0.major}{0.minor}".format(sys.version_info),
            "cp{0.major}{0.minor}".format(sys.version_info)]
-PLATFORM_TAGS = {
-    "any": "any", "manylinux1_i686": "i686", "manylinux1_x86_64": "x86_64"}
 THIS_ARCH = ["i686", "x86_64"][sys.maxsize > 2 ** 32]
 LICENSE_NAMES = ["LICENSE", "LICENSE.txt", "license.txt",
                  "COPYING", "COPYING.md", "COPYING.rst", "COPYING.txt",
@@ -346,6 +344,10 @@ class WheelInfo(
             raise ValueError(f"Invalid wheel url: {url}")
         return cls(
             name, version, build, set(pythons.split(".")), abi, platform)
+
+    def get_arch_platform(self):
+        # any -> any; manylinuxXXX_{i686,x86_64} -> {i686,x86_64}.
+        return self.platform.split("_", 1)[-1]
 
 
 # Copy-pasted from PEP503.
@@ -949,10 +951,10 @@ class Package(_BasePackage):
                 else:
                     if src_template == WHEEL_ANY_SOURCE:
                         continue
-                    arches.append(PLATFORM_TAGS[wheel_info.platform])
+                    arches.append(wheel_info.get_arch_platform())
                     src_template = WHEEL_ARCH_SOURCE
                 sources.append(src_template.format(
-                    arch=PLATFORM_TAGS[wheel_info.platform],
+                    arch=wheel_info.get_arch_platform(),
                     url=url,
                     name=Path(urllib.parse.urlparse(url["url"]).path).name))
         else:
@@ -978,13 +980,15 @@ class Package(_BasePackage):
                 wheel_info = WheelInfo.parse(url["url"])
                 if not wheel_info.pythons.intersection(PY_TAGS):
                     continue
+                if wheel_info.platform == "any":
+                    pkgtype = "anywheel"
+                elif wheel_info.platform.startswith("manylinux"):
+                    pkgtype = "manylinuxwheel"
+                else:
+                    continue
                 try:
-                    order = pkgtypes.index(
-                        {"any": "anywheel",
-                         "manylinux1_i686": "manylinuxwheel",
-                         "manylinux1_x86_64": "manylinuxwheel"}[
-                             wheel_info.platform])
-                except (KeyError, ValueError):
+                    order = pkgtypes.index(pkgtype)
+                except ValueError:
                     continue
                 else:
                     # - The wheel name seems to use the *non-lowercased* but
@@ -1341,8 +1345,7 @@ def main():
             super().__init__(*args, **kwargs)
 
         def __call__(self, parser, namespace, values, option_string=None):
-            values = (getattr(namespace, self.dest)
-                      + (tuple(values.split(",")) if values else ()))
+            values = (*getattr(namespace, self.dest), *values.split(","))
             try:
                 idx = values.index("")
             except ValueError:
