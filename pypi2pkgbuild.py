@@ -277,6 +277,7 @@ def _run_shell(args, **kwargs):
                       "PYTHONNOUSERSITE": "1",
                       "PIP_CONFIG_FILE": "/dev/null",
                       "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+                      "COLOREDLOGS_AUTO_INSTALL": "",  # Hide pip logging.
                       **kwargs.pop("env", {})},
               "check": True,
               "text": True,
