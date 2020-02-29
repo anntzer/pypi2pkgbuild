@@ -202,7 +202,7 @@ fi
 
 _build() {
     if _is_wheel; then return; fi
-    cd "$srcdir/$(_dist_name)"
+    cd "$srcdir"
     # See Arch Wiki/PKGBUILD/license.
     # Get the first filename that matches.
     local test_name
@@ -213,11 +213,20 @@ _build() {
             fi
         done
     fi
+    # Use the latest version of pip, as Arch's version is historically out of
+    # date(!) and newer versions do fix bugs (sometimes).
+    python -mvenv --clear --system-site-packages tmpenv
+    tmpenv/bin/pip --quiet install -U pip
     # Build the wheel (which we allow to fail) only after fetching the license.
-    /usr/bin/pip wheel -v --no-deps --wheel-dir="$srcdir" \\
-        --global-option=--no-user-cfg \\
-        --global-option=build --global-option=-j"$(nproc)" . ||
-        true
+    # In order to isolate from ~/.pydistutils.cfg, we need to set $HOME to a
+    # temporary directory, and thus first $XDG_CACHE_HOME back to its real
+    # location, so that pip inserts the wheel in the wheel cache.  We cannot
+    # use --global-option=--no-user-cfg instead because that fully disables
+    # wheels, causing a from-source build of build dependencies such as
+    # numpy/scipy.
+    XDG_CACHE_HOME="${XDG_CACHE_HOME:-"$HOME/.cache"}" HOME=tmpenv \\
+        tmpenv/bin/pip wheel -v --no-deps --wheel-dir="$srcdir" \\
+        "./$(_dist_name)" || true
 }
 
 build() { _build; }
@@ -232,12 +241,9 @@ _check() {
 
 _package() {
     cd "$srcdir"
-    # Use the latest version of pip, as Arch's version is historically out of
-    # date(!) and newer versions do fix bugs (sometimes).
-    python -mvenv --clear --system-site-packages ../tmpenv
-    ../tmpenv/bin/pip --quiet install -U pip
     # pypa/pip#3063: pip always checks for a globally installed version.
-    ../tmpenv/bin/pip install --prefix="$pkgdir/usr" \\
+    python -mvenv --clear --system-site-packages tmpenv
+    tmpenv/bin/pip install --prefix="$pkgdir/usr" \\
         --no-deps --ignore-installed --no-warn-script-location \\
         "$(ls ./*.whl 2>/dev/null || echo ./"$(_dist_name)")"
     if [[ -d "$pkgdir/usr/etc" ]]; then
