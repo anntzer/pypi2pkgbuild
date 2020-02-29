@@ -232,8 +232,12 @@ _check() {
 
 _package() {
     cd "$srcdir"
+    # Use the latest version of pip, as Arch's version is historically out of
+    # date(!) and newer versions do fix bugs (sometimes).
+    python -mvenv --clear --system-site-packages ../tmpenv
+    ../tmpenv/bin/pip --quiet install -U pip
     # pypa/pip#3063: pip always checks for a globally installed version.
-    /usr/bin/pip --quiet install --root="$pkgdir" \\
+    ../tmpenv/bin/pip install --prefix="$pkgdir/usr" \\
         --no-deps --ignore-installed --no-warn-script-location \\
         "$(ls ./*.whl 2>/dev/null || echo ./"$(_dist_name)")"
     if [[ -d "$pkgdir/usr/etc" ]]; then
