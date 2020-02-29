@@ -247,6 +247,11 @@ _package() {
 package() { _package; }
 
 . "$(dirname "$BASH_SOURCE")/PKGBUILD_EXTRAS"
+
+# Remove makedepends already in depends (which may have been listed for the
+# first build, but autodetected on the second.
+makedepends=($(printf '%s\\n' "${makedepends[@]}" |
+             grep -Pwv "^($(IFS='|'; echo "${depends[*]}"))$"))
 """
 
 METAPKGBUILD_CONTENTS = """\
