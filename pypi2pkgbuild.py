@@ -183,7 +183,8 @@ if [[ _is_wheel &&
 fi
 
 _dist_name() {
-    find "$srcdir" -mindepth 1 -maxdepth 1 -type d -printf %f
+    find "$srcdir" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' |
+        grep -v '^_tmpenv$'
 }
 
 if [[ $(_first_source) =~ ^git+ ]]; then
@@ -215,8 +216,8 @@ _build() {
     fi
     # Use the latest version of pip, as Arch's version is historically out of
     # date(!) and newer versions do fix bugs (sometimes).
-    python -mvenv --clear --system-site-packages tmpenv
-    tmpenv/bin/pip --quiet install -U pip
+    python -mvenv --clear --system-site-packages _tmpenv
+    _tmpenv/bin/pip --quiet install -U pip
     # Build the wheel (which we allow to fail) only after fetching the license.
     # In order to isolate from ~/.pydistutils.cfg, we need to set $HOME to a
     # temporary directory, and thus first $XDG_CACHE_HOME back to its real
@@ -224,8 +225,8 @@ _build() {
     # use --global-option=--no-user-cfg instead because that fully disables
     # wheels, causing a from-source build of build dependencies such as
     # numpy/scipy.
-    XDG_CACHE_HOME="${XDG_CACHE_HOME:-"$HOME/.cache"}" HOME=tmpenv \\
-        tmpenv/bin/pip wheel -v --no-deps --wheel-dir="$srcdir" \\
+    XDG_CACHE_HOME="${XDG_CACHE_HOME:-"$HOME/.cache"}" HOME=_tmpenv \\
+        _tmpenv/bin/pip wheel -v --no-deps --wheel-dir="$srcdir" \\
         "./$(_dist_name)" || true
 }
 
@@ -242,8 +243,8 @@ _check() {
 _package() {
     cd "$srcdir"
     # pypa/pip#3063: pip always checks for a globally installed version.
-    python -mvenv --clear --system-site-packages tmpenv
-    tmpenv/bin/pip install --prefix="$pkgdir/usr" \\
+    python -mvenv --clear --system-site-packages _tmpenv
+    _tmpenv/bin/pip install --prefix="$pkgdir/usr" \\
         --no-deps --ignore-installed --no-warn-script-location \\
         "$(ls ./*.whl 2>/dev/null || echo ./"$(_dist_name)")"
     if [[ -d "$pkgdir/usr/etc" ]]; then
