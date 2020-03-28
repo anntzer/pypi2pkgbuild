@@ -1,3 +1,0 @@
-# python-sphinx-gallery
-depends+=('python-matplotlib' 'python-pillow' 'python-sphinx')
-# vim: set ft=PKGBUILD :
