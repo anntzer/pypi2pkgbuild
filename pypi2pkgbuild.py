@@ -247,6 +247,13 @@ _package() {
     _tmpenv/bin/pip install --prefix="$pkgdir/usr" \\
         --no-deps --ignore-installed --no-warn-script-location \\
         "$(ls ./*.whl 2>/dev/null || echo ./"$(_dist_name)")"
+    if [[ -d "$pkgdir/usr/bin" ]]; then  # Fix entry points.
+        for f in "$pkgdir/usr/bin/"*; do
+            if [[ $(head -n1 "$f") = "#!$(readlink -f _tmpenv)/bin/python" ]]; then
+                sed -i '1c#!/usr/bin/python' "$f"
+            fi
+        done
+    fi
     if [[ -d "$pkgdir/usr/etc" ]]; then
         mv "$pkgdir/usr/etc" "$pkgdir/etc"
     fi
