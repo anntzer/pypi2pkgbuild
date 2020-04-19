@@ -333,7 +333,7 @@ def get_makepkg_conf():
             pkgrel=0
             arch=(any)
             prepare() {
-                printf "CFLAGS %s\0CXXFLAGS %s\0PACKAGER %s" \
+                printf "\0CFLAGS %s\0CXXFLAGS %s\0PACKAGER %s" \
                     "$CFLAGS" "$CXXFLAGS" "$PACKAGER" > log.txt
                 exit 0
             }
