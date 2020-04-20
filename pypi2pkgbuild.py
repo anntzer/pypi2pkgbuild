@@ -334,17 +334,16 @@ def get_makepkg_conf():
             arch=(any)
             prepare() {
                 printf "\0CFLAGS %s\0CXXFLAGS %s\0PACKAGER %s" \
-                    "$CFLAGS" "$CXXFLAGS" "$PACKAGER" > log.txt
+                    "$CFLAGS" "$CXXFLAGS" "$PACKAGER"
                 exit 0
             }
         """)
         Path(tmpdir, "PKGBUILD").write_text(mini_pkgbuild)
         try:
-            _run_shell("makepkg", cwd=tmpdir, stdout=PIPE, stderr=PIPE)
+            out = _run_shell("makepkg", cwd=tmpdir, stdout=PIPE, stderr=PIPE).stdout
         except CalledProcessError as e:
             sys.stderr.write(e.stderr)
             raise
-        out = Path(tmpdir, "src/log.txt").read_text()
     return dict(pair.split(" ", 1) for pair in out.split("\0"))
 
 
