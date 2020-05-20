@@ -41,6 +41,7 @@ except (ImportError, LookupError):
 
 LOGGER = logging.getLogger(Path(__file__).stem)
 
+PKGTYPES = ["anywheel", "sdist", "manylinuxwheel"]
 PY_TAGS = ["py{0.major}".format(sys.version_info),
            "cp{0.major}".format(sys.version_info),
            "py{0.major}{0.minor}".format(sys.version_info),
@@ -1434,9 +1435,7 @@ def main():
         action=CommaSeparatedList, default=(),
         help="Comma-separated list of setup_requires that will be forced.")
     parser.add_argument(
-        "-t", "--pkgtypes",
-        action=CommaSeparatedList,
-        default=("anywheel", "sdist", "manylinuxwheel"),
+        "-t", "--pkgtypes", action=CommaSeparatedList, default=tuple(PKGTYPES),
         help="Comma-separated preference order for dists.")
     parser.add_argument(
         "-D", "--no-deps", action="store_false",
@@ -1488,6 +1487,9 @@ def main():
 
     outdated, upgrade, ignore, install, pacman_opts = map(
         vars(args).pop, ["outdated", "upgrade", "ignore", "install", "pacman"])
+
+    if not {*args.pkgtypes} <= {*PKGTYPES}:
+        parser.error("valid --pkgtypes are: {}".format(", ".join(PKGTYPES)))
 
     if outdated:
         if vars(args).pop("names"):
