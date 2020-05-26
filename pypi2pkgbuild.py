@@ -497,15 +497,14 @@ def _get_metadata(name, setup_requires):
             . '{venvdir}/bin/activate'
             pip install --upgrade {setup_requires} >/dev/null
             install_cmd() {{
-                pip freeze | cut -d= -f1 | sort >'{venvdir}/pre_install_list'
+                pip list --format=freeze | cut -d= -f1 | sort >'{venvdir}/pre'
                 if ! pip install --no-deps '{req}'; then
                     return 1
                 fi
-                pip freeze | cut -d= -f1 | sort >'{venvdir}/post_install_list'
+                pip list --format=freeze | cut -d= -f1 | sort >'{venvdir}/post'
                 # installed name, or real name if it doesn't appear
                 # (setuptools, pip, Cython, numpy).
-                install_name="$(comm -13 '{venvdir}/pre_install_list' \
-                                         '{venvdir}/post_install_list')"
+                install_name="$(comm -13 '{venvdir}/pre' '{venvdir}/post')"
                 # the requirement can be 'req_name==version', or a path name.
                 if [[ -z "$install_name" ]]; then
                     if [[ -e '{req}' ]]; then
