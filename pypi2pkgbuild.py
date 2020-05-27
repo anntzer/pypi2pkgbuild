@@ -169,9 +169,11 @@ _first_source() {
         tr ' ' '\\n' | grep -Pv '^(PKGBUILD_EXTRAS)?$' | head -1
 }
 
-if [[ $(_first_source) =~ ^git+ ]]; then
-    provides+=("${pkgname%-git}")
-    conflicts+=("${pkgname%-git}")
+_vcs="$(grep -Po '^[a-z]+(?=\+)' <<< "$(_first_source)")"
+if [[ "$_vcs" ]]; then
+    makedepends+=("$(pkgfile --quiet /usr/bin/$_vcs)")
+    provides+=("${pkgname%-$_vcs}")
+    conflicts+=("${pkgname%-$_vcs}")
 fi
 
 _is_wheel() {
@@ -399,6 +401,11 @@ class PackagingError(Exception):
     pass
 
 
+def _get_vcs(name):
+    match = re.match(r"\A[a-z]+(?=\+)", name)
+    return match.group(0) if match else None
+
+
 # Vendored from pip._internal.vcs.VersionControl.get_url_rev.
 def _vcs_get_url_rev(url):
     error_message = (
@@ -534,7 +541,7 @@ def _get_metadata(name, setup_requires):
             venvdir=venvdir,
             setup_requires=" ".join(setup_requires),
             req=(_get_url_unpacked_path_or_null(name)
-                 if name.startswith("git+") else name),
+                 if _get_vcs(name) else name),
             more_requires_log=more_requires_log,
             log=log)
         try:
@@ -774,8 +781,8 @@ class PackageRef:
             format(pkgname), stdout=PIPE, check=False).stdout.splitlines()})
 
         # Final values.
-        self.pkgname = (
-            f"{pkgname}-git" if name.startswith("git+") else pkgname)
+        vcs = _get_vcs(name)
+        self.pkgname = f"{pkgname}-{vcs}" if vcs else pkgname
         # Packages that depend on a vendored package should list the
         # metapackage (which may be otherwise unrelated) as a dependency, so
         # that the metapackage can get updated into an official package without
