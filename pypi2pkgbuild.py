@@ -272,7 +272,8 @@ package() { _package; }
 # Remove makedepends already in depends (which may have been listed for the
 # first build, but autodetected on the second.
 makedepends=($(printf '%s\\n' "${makedepends[@]}" |
-             grep -Pwv "^($(IFS='|'; echo "${depends[*]}"))$"))
+               grep -Pwv "^($(IFS='|'; echo "${depends[*]}"))$"))
+:  # Apparently ending with makedepends assignment sometimes fails.
 """
 
 METAPKGBUILD_CONTENTS = """\
