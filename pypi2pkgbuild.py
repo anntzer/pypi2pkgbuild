@@ -1482,6 +1482,8 @@ def main():
             record.levelno = max(handler_level, record.levelno)
         return True
 
+    LOGGER.debug(f"This is pypi2pkgbuild {__version__}.")
+
     # Dependency checking needs to happen after logging is configured.
     for cmd in ["namcap", "pkgfile"]:
         if shutil.which(cmd) is None:
