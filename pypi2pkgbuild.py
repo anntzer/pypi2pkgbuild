@@ -661,7 +661,9 @@ def _get_site_packages_location():
 
 # For _find_{installed,arch}_name_version:
 #   - first check for a matching `.{dist,egg}-info` file, ignoring case to
-#     handle e.g. `cycler` (pip) / `Cycler` (PyPI).
+#     handle e.g. `cycler` (pip) / `Cycler` (PyPI); also, there is usually a
+#     version number (separated by a dash) but not always, e.g. for PySide6 (in
+#     which case a dot comes next).
 #   - then check exact lowercase matches, to handle packages without a
 #     `.{dist,egg}-info`.
 
@@ -669,7 +671,7 @@ def _get_site_packages_location():
 def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
     parts = (
         _run_shell(
-            "(shopt -s nocaseglob; pacman -Qo {}/{}-*-info 2>/dev/null) | "
+            "(shopt -s nocaseglob; pacman -Qo {}/{}[.-]*-info 2>/dev/null) | "
             "rev | cut -d' ' -f1,2 | rev".format(
                 _get_site_packages_location(), to_wheel_name(pep503_name)),
             stdout=PIPE).stdout.split()
@@ -1341,7 +1343,8 @@ def find_outdated():
     owners = {}
     for row, loc in zip(outdated, locs):
         if loc == syswide_location:
-            pkgname, arch_version = _find_installed_name_version(row["name"])
+            pkgname, arch_version = _find_installed_name_version(
+                pep503_normalize_name(row["name"]))
             # Check that pypi's version is indeed newer.  Some packages
             # mis-report their version to pip (e.g., slicerator 0.9.7's Github
             # release).
