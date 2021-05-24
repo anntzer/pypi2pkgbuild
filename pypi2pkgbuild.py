@@ -379,9 +379,11 @@ class WheelInfo(
         return cls(
             name, version, build, set(pythons.split(".")), abi, platform)
 
-    def get_arch_platform(self):
-        # any -> any; manylinuxXXX_{i686,x86_64} -> {i686,x86_64}.
-        return self.platform.split("_", 1)[-1]
+    def get_arch_platforms(self):
+        # any -> any
+        # manylinuxXXX_{i686,x86_64}.manylinuxYYY_{...} -> {i686,x86_64}, {...}
+        return [platform.split("_", 1)[-1]
+                for platform in self.platform.split(".")]
 
 
 # Copy-pasted from PEP503.
@@ -991,12 +993,14 @@ class Package(_BasePackage):
                 else:
                     if src_template == WHEEL_ANY_SOURCE:
                         continue
-                    arches.append(wheel_info.get_arch_platform())
+                    arches.extend(wheel_info.get_arch_platforms())
                     src_template = WHEEL_ARCH_SOURCE
-                sources.append(src_template.format(
-                    arch=wheel_info.get_arch_platform(),
-                    url=url,
-                    name=Path(urllib.parse.urlparse(url["url"]).path).name))
+                sources.extend(
+                    src_template.format(
+                        arch=arch,
+                        url=url,
+                        name=Path(urllib.parse.urlparse(url["url"]).path).name)
+                    for arch in wheel_info.get_arch_platforms())
         else:
             arches.append("any")
             sources.append(SDIST_SOURCE.format(url=self._urls[0]))
