@@ -673,10 +673,9 @@ def _get_site_packages_location():
 def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
     parts = (
         _run_shell(
-            "(shopt -s nocaseglob; pacman -Qo {}/{}[.-]*-info 2>/dev/null) | "
-            "rev | cut -d' ' -f1,2 | rev".format(
-                _get_site_packages_location(), to_wheel_name(pep503_name)),
-            stdout=PIPE).stdout.split()
+            "find . -maxdepth 1 -iname '%s[.-]*-info' -exec pacman -Qo '{}' \;"
+            " | rev | cut -d' ' -f1,2 | rev" % to_wheel_name(pep503_name),
+            cwd=_get_site_packages_location(), stdout=PIPE).stdout.split()
         or _run_shell(
             f"pacman -Q python-{pep503_name} 2>/dev/null",
             stdout=PIPE, check=False).stdout.split())
