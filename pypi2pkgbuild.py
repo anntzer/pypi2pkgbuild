@@ -169,7 +169,7 @@ _first_source() {
         tr ' ' '\\n' | grep -Pv '^(PKGBUILD_EXTRAS)?$' | head -1
 }
 
-_vcs="$(grep -Po '^[a-z]+(?=\+)' <<< "$(_first_source)")"
+_vcs="$(grep -Po '^[a-z]+(?=\\+)' <<< "$(_first_source)")"
 if [[ "$_vcs" ]]; then
     makedepends+=("$(pkgfile --quiet /usr/bin/$_vcs)")
     provides+=("${pkgname%-$_vcs}")
@@ -680,8 +680,9 @@ def _get_site_packages_location():
 def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
     parts = (
         _run_shell(
-            "find . -maxdepth 1 -iname '%s[.-]*-info' -exec pacman -Qo '{}' \;"
-            " | rev | cut -d' ' -f1,2 | rev" % to_wheel_name(pep503_name),
+            "find . -maxdepth 1 -iname '%s[.-]*-info' "
+            "-exec pacman -Qo '{}' \\; | rev | cut -d' ' -f1,2 | rev"
+            % to_wheel_name(pep503_name),
             cwd=_get_site_packages_location(), stdout=PIPE).stdout.split()
         or _run_shell(
             f"pacman -Q python-{pep503_name} 2>/dev/null",
@@ -712,8 +713,8 @@ def _find_arch_name_version(pep503_name):
     for standalone in [True, False]:  # vendored into another Python package?
         *candidates, = map(str.strip, _run_shell(
             "pkgfile -riv "
-            "'^/usr/lib/python{version.major}\.{version.minor}/{parent}"
-            r"{wheel_name}-.*py{version.major}\.{version.minor}\.egg-info' | "
+            "'^/usr/lib/python{version.major}\\.{version.minor}/{parent}"
+            "{wheel_name}-.*py{version.major}\\.{version.minor}\\.egg-info' | "
             "cut -f1 | uniq | cut -d/ -f2".format(
                 parent="site-packages/" if standalone else "",
                 wheel_name=to_wheel_name(pep503_name),
