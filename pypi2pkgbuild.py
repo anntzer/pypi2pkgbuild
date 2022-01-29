@@ -304,7 +304,10 @@ def _run_shell(args, **kwargs):
                       # This should fallback to C if the locale is not present.
                       # We'd prefer C.utf8 but that doesn't exist.  With other
                       # locales, outputs cannot be parsed.
-                      "LC_ALL": "en_US.utf8",
+                      "LC_ALL": "en_US.UTF-8",
+                      # LANGUAGE is also needed for e.g. pacman which goes
+                      # through gettext.
+                      "LANGUAGE": "en_US.UTF-8",
                       "PYTHONNOUSERSITE": "1",
                       "PIP_CONFIG_FILE": "/dev/null",
                       "PIP_DISABLE_PIP_VERSION_CHECK": "1",
