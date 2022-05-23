@@ -40,8 +40,7 @@ One can even run ``pypi2pkgbuild.py`` on itself to create a proper Arch package
 (``pypi2pkgbuild.py git+https://github.com/anntzer/pypi2pkgbuild``).
 
 A minimal test suite (checking that ``pypi2pkgbuild.py`` can indeed package
-itself) can by run with pytest≥3.9 (``pytest -s`` to keep the output to the
-terminal).
+itself) can by run with unittest (or pytest).
 
 Usage
 -----
