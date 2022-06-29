@@ -1028,12 +1028,12 @@ class Package(_BasePackage):
         urls = []
         for url in unfiltered_urls:
             if url["packagetype"] == "bdist_wheel":
-                wheel_info = WheelInfo.parse(url["url"])
-                if not wheel_info.pythons.intersection(PY_TAGS):
+                wh_info = WheelInfo.parse(url["url"])
+                if not wh_info.pythons.intersection(PY_TAGS):
                     continue
-                if wheel_info.platform == "any":
+                if wh_info.platform == "any":
                     pkgtype = "anywheel"
-                elif wheel_info.platform.startswith("manylinux"):
+                elif wh_info.platform.startswith("manylinux"):
                     pkgtype = "manylinuxwheel"
                 else:
                     continue
@@ -1042,16 +1042,22 @@ class Package(_BasePackage):
                 except ValueError:
                     continue
                 else:
-                    # - The wheel name seems to use the *non-lowercased* but
-                    #   otherwise normalized name.  Just lowercase it too for
-                    #   simplicity.
+                    # - https://packaging.python.org/en/latest/specifications/binary-distribution-format/#escaping-and-unicode
+                    #   The wheel name is the normalized name, but uppercase
+                    #   should be supported too, and "." can occur instead of
+                    #   "_".
                     # - PyPI currently allows uploading of packages with local
                     #   version identifiers, see pypa/pypi-legacy#486.
-                    if (wheel_info.name.lower()
-                            != to_wheel_name(self._ref.pep503_name)
-                        or wheel_info.version
-                            != self._ref.info["info"]["version"]):
-                        LOGGER.warning("Unexpected wheel info: %s", wheel_info)
+                    if (wh_info.name.lower().replace(".", "_")
+                            != to_wheel_name(self._ref.pep503_name)):
+                        LOGGER.warning(
+                            "Unexpected wheel info: %s "
+                            "(expected case-insensitive name: %s)",
+                            wh_info, to_wheel_name(self._ref.pep503_name))
+                    elif wh_info.version != self._ref.info["info"]["version"]:
+                        LOGGER.warning(
+                            "Unexpected wheel info: %s (expected version: %s)",
+                            wh_info, self._ref.info["info"]["version"])
                     else:
                         urls.append((url, order))
             elif url["packagetype"] == "sdist":
