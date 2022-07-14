@@ -693,7 +693,7 @@ def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
             expected_conflict = pkgname[:-len("-git")]
             if _run_shell(
                     f"pacman -Qi {pkgname} 2>/dev/null | "
-                    f"grep -q 'Conflicts With *: {expected_conflict}$'",
+                    rf"grep -q 'Conflicts With *:.*\b{expected_conflict}\b'",
                     check=False).returncode == 0:
                 pkgname = pkgname[:-len("-git")]
             else:
