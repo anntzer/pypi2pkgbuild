@@ -5,12 +5,11 @@ import abc
 from abc import ABC
 from argparse import (Action, ArgumentParser, ArgumentDefaultsHelpFormatter,
                       RawDescriptionHelpFormatter)
-from collections import namedtuple, OrderedDict
+from collections import namedtuple
 from contextlib import suppress
 from functools import lru_cache
 import hashlib
 from io import StringIO
-from itertools import repeat
 import json
 import logging
 import os
@@ -285,11 +284,6 @@ package() {
     true
 }
 """
-
-
-def _unique(seq):
-    """Return unique elements in a sequence, keeping them in order."""
-    return list(OrderedDict(zip(list(seq)[::-1], repeat(None))))[::-1]
 
 
 def _run_shell(args, **kwargs):
@@ -634,9 +628,7 @@ def _get_info(name, *,
                 if _version else f"https://pypi.org/pypi/{name}/json")
         except urllib.error.HTTPError:
             return
-        # Load as OrderedDict so that always the same sdist is chosen if e.g.
-        # both zip and tgz are available.
-        request = json.loads(r.read(), object_pairs_hook=OrderedDict)
+        request = json.loads(r.read())
         if not _version:
             versions = [
                 version for version in map(pkg_resources.parse_version,
@@ -820,6 +812,7 @@ class DependsTuple(tuple):  # Keep it hashable.
 
     def __format__(self, fmt):
         # See above re: dependency type.
+        def _unique(seq): return [*dict.fromkeys(seq)]  # Unique, in order.
         if fmt == "Package":
             return " ".join(_unique(ref.depname for ref in self))
         elif fmt == "MetaPackage":
@@ -836,7 +829,7 @@ class _BasePackage(ABC):
     build_cache = []
 
     def __init__(self):
-        self._files = OrderedDict()
+        self._files = {}
         # self._pkgbuild = ...
 
     @abc.abstractmethod
@@ -1374,7 +1367,7 @@ def find_outdated():
                     row["name"], row["latest_version"])
                 continue
             owners.setdefault(f"{pkgname} {arch_version}", []).append(row)
-    owners = OrderedDict(sorted(owners.items()))
+    owners = {k: v for k, v in sorted(owners.items())}
     rows = sum(owners.values(), [])
     name_len, ver_len, lver_len, lft_len = (
         max(map(len, (row[key] for row in rows)))
