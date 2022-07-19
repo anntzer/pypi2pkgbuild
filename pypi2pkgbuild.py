@@ -636,10 +636,10 @@ def _get_info(name, *,
                 if not (not pre and version.is_prerelease)]
             if not versions:
                 raise PackagingError(
-                    "No suitable release found."
+                    f"No suitable release found for {name}."
                     if not request["releases"] else
-                    "No suitable release found.  Pre-releases are available, "
-                    "use --pre to use the latest one.")
+                    f"No suitable release found for {name}.  Pre-releases are "
+                    f"available, use --pre to use the latest one.")
             max_version = str(max(version for version in versions))
             if max_version != request["info"]["version"]:
                 return _get_info(name, pre=pre, _version=max_version)
