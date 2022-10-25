@@ -1203,8 +1203,11 @@ class Package(_BasePackage):
                             break
             if not _license_found:
                 self._files.update(
+                    # These entries are mostly from a fixed, ASCII-only list,
+                    # but can also be read from info["license"] which doesn't
+                    # have to be ASCII.
                     LICENSE=("LICENSE: " + ", ".join(licenses) + "\n")
-                            .encode("ascii"))
+                            .encode("utf-8"))
                 LOGGER.warning("Could not retrieve license file.")
 
         return licenses
