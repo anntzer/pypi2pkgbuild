@@ -1,0 +1,20 @@
+name: build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Test
+      shell: bash
+      run: |
+        docker run --interactive --volume="$(pwd)":/io:Z --workdir=/io \
+          archlinux/archlinux:base-devel bash <<EOF
+        pacman -Syu --noconfirm &&
+          pacman -S --noconfirm git namcap pkgfile python-pip python-setuptools &&
+          pkgfile --update &&
+          chmod -R a+w . &&
+          sudo -u nobody python -munittest
+        EOF

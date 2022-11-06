@@ -21,12 +21,13 @@ wxPython) [#]_.
 Dependencies and installation
 -----------------------------
 
-``pypi2pkgbuild.py`` depends on the Arch Linux packages namcap_, pkgfile_, and
-python-pip_ [#]_.
+``pypi2pkgbuild.py`` depends on the Arch Linux packages namcap_, pkgfile_,
+python-pip_, and python-setuptools_ [#]_.
 
 .. _namcap: https://wiki.archlinux.org/index.php/Namcap
 .. _pkgfile: https://wiki.archlinux.org/index.php/Pkgfile
 .. _python-pip: https://wiki.archlinux.org/index.php/Python#Package_management
+.. _python-setuptools: https://wiki.archlinux.org/index.php/Python#Package_management
 
 .. [#] Officially, only the latest releases of pacman and pip are supported.
    In practice, the hard requirements that I am aware of are pacman≥5.1
