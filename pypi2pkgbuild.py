@@ -5,6 +5,7 @@ import abc
 from abc import ABC
 from argparse import (Action, ArgumentParser, ArgumentDefaultsHelpFormatter,
                       RawDescriptionHelpFormatter)
+import ast
 from collections import namedtuple
 from contextlib import suppress
 from functools import lru_cache
@@ -24,8 +25,6 @@ import sys
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 import textwrap
 import urllib.request
-
-import pkg_resources
 
 try:
     import setuptools_scm
@@ -331,6 +330,20 @@ def _run_shell(args, **kwargs):
 
 
 @lru_cache()
+def _get_readonly_clean_venv():  # "readonly" is an intent, but not enforced.
+    venv_dir = TemporaryDirectory()
+    _run_shell(["python", "-mvenv", venv_dir.name])
+    return venv_dir  # Don't let venv_dir get GC'd.
+
+
+def _run_python(args, **kwargs):
+    """Run python from a temporary venv."""
+    venv_dir = _get_readonly_clean_venv().name
+    return _run_shell(  # args must be a list; str is not supported.
+        [f"{venv_dir}/bin/python"] + args, **kwargs)
+
+
+@lru_cache()
 def get_makepkg_conf():
     with TemporaryDirectory() as tmpdir:
         mini_pkgbuild = textwrap.dedent(r"""
@@ -437,9 +450,10 @@ def _get_url_impl(url):
                    cwd=cache_dir.name)
     elif parsed.scheme == "pip":
         try:
-            _run_shell(["pip", "download", "--no-deps", "-d", cache_dir.name,
-                        *(parsed.fragment.split() if parsed.fragment else []),
-                        parsed.netloc])
+            _run_python([
+                "-mpip", "download", "--no-deps", "-d", cache_dir.name,
+                *(parsed.fragment.split() if parsed.fragment else []),
+                parsed.netloc])
         except CalledProcessError:
             # pypa/pip#1884: download can "fail" due to buggy setup.py (e.g.
             # astropy 1.3.3).
@@ -449,8 +463,7 @@ def _get_url_impl(url):
         Path(cache_dir.name, Path(parsed.path).name).write_bytes(
             urllib.request.urlopen(url).read())
     packed_path, = (path for path in Path(cache_dir.name).iterdir())
-    # Keep a reference to the TemporaryDirectory.
-    return cache_dir, packed_path
+    return cache_dir, packed_path  # Don't let cache_dir get GC'd.
 
 
 def _get_url_packed_path(url):
@@ -476,7 +489,7 @@ def _get_url_unpacked_path_or_null(url):
 
 @lru_cache()
 def _guess_url_makedepends(url, guess_makedepends):
-    makedepends = [PackageRef("pip"), PackageRef("wheel")]
+    makedepends = []
     if ("swig" in guess_makedepends
             and list(_get_url_unpacked_path_or_null(url).glob("**/*.i"))):
         makedepends.append(NonPyPackageRef("swig"))
@@ -498,25 +511,27 @@ def _get_metadata(name, setup_requires):
     #
     # To handle sdists that depend on numpy, we just see whether installing in
     # presence of numpy makes things better...
-    with TemporaryDirectory() as venvdir, \
+    with TemporaryDirectory() as venv_dir, \
          NamedTemporaryFile("r") as more_requires_log, \
          NamedTemporaryFile("r") as log:
         script = textwrap.dedent(r"""
             set -e
-            python -mvenv {venvdir}
+            python -mvenv {venv_dir}
             # Leave the source directory, which may contain wheels/sdists/etc.
-            cd {venvdir}
-            . '{venvdir}/bin/activate'
-            pip install --upgrade {setup_requires} >/dev/null
+            cd {venv_dir}
+            . '{venv_dir}/bin/activate'
+            if [[ -n '{setup_requires}' ]]; then
+                pip install --upgrade {setup_requires} >/dev/null
+            fi
             install_cmd() {{
-                pip list --format=freeze | cut -d= -f1 | sort >'{venvdir}/pre'
+                pip list --format=freeze | cut -d= -f1 | sort >'{venv_dir}/a'
                 if ! pip install --no-deps '{req}'; then
                     return 1
                 fi
-                pip list --format=freeze | cut -d= -f1 | sort >'{venvdir}/post'
+                pip list --format=freeze | cut -d= -f1 | sort >'{venv_dir}/b'
                 # installed name, or real name if it doesn't appear
                 # (setuptools, pip, Cython, numpy).
-                install_name="$(comm -13 '{venvdir}/pre' '{venvdir}/post')"
+                install_name="$(comm -13 '{venv_dir}/a' '{venv_dir}/b')"
                 # the requirement can be 'req_name==version', or a path name.
                 if [[ -z "$install_name" ]]; then
                     if [[ -e '{req}' ]]; then
@@ -543,7 +558,7 @@ def _get_metadata(name, setup_requires):
                 show_cmd
             fi
         """).format(
-            venvdir=venvdir,
+            venv_dir=venv_dir,
             setup_requires=" ".join(setup_requires),
             req=(_get_url_unpacked_path_or_null(name)
                  if _get_vcs(name) else name),
@@ -631,17 +646,22 @@ def _get_info(name, *,
             return
         request = json.loads(r.read())
         if not _version:
-            versions = [
-                version for version in map(pkg_resources.parse_version,
-                                           request["releases"])
-                if not (not pre and version.is_prerelease)]
-            if not versions:
+            if not request["releases"]:
+                raise PackagingError(f"No suitable release found for {name}.")
+            src = ("from sys import argv; "
+                   "from pkg_resources import parse_version as pv; ")
+            src += (
+                "print(sorted(argv[1:], key=pv))" if pre else
+                "print(sorted([v for v in argv[1:] if not pv(v).is_prerelease],"
+                "key=pv))")
+            versions = ast.literal_eval(
+                _run_python(["-c", src, *request["releases"]], stdout=PIPE)
+                .stdout)
+            if not versions:  # request only returned pre-releases.
                 raise PackagingError(
-                    f"No suitable release found for {name}."
-                    if not request["releases"] else
                     f"No suitable release found for {name}.  Pre-releases are "
                     f"available, use --pre to use the latest one.")
-            max_version = str(max(version for version in versions))
+            max_version = versions[-1]
             if max_version != request["info"]["version"]:
                 return _get_info(name, pre=pre, _version=max_version)
         return request
@@ -1085,14 +1105,11 @@ class Package(_BasePackage):
             f"pip://{self._ref.pypi_name}{gen_ver_cmp_operator(self.pkgver)}")
 
     def _find_makedepends(self, options):
-        if self._get_first_package_type() == "bdist_wheel":
-            self._makedepends = DependsTuple(
-                map(PackageRef, ["pip", *options.setup_requires]))
-        else:
-            self._makedepends = DependsTuple((
-                *map(PackageRef, options.setup_requires),
-                *_guess_url_makedepends(
-                    self._get_sdist_url(), options.guess_makedepends)))
+        self._makedepends = DependsTuple((
+            *map(PackageRef, options.setup_requires),
+            *(_guess_url_makedepends(self._get_sdist_url(),
+                                     options.guess_makedepends)
+              if self._get_first_package_type() != "bdist_wheel" else ())))
         with TemporaryDirectory() as tmpdir:
             Path(tmpdir, "PKGBUILD").write_text(
                 # makepkg always requires that these three variables are set.
@@ -1344,37 +1361,28 @@ def create_package(name, options):
 
 
 def find_outdated():
-    syswide_location = (
+    outdated = json.loads(_run_python([
+        "-mpip", "list", "--outdated", "--format=json", "--path",
         "{0.prefix}/lib/python{0.version_info.major}.{0.version_info.minor}"
-        "/site-packages".format(sys))
-    outdated = json.loads(
-        _run_shell("pip list --outdated --format=json", stdout=PIPE).stdout)
-    if not outdated:
-        return {}
-    # `pip show` is rather slow, so just call it once.
-    locs = _run_shell(
-        "pip show {} 2>/dev/null | grep -Po '(?<=^Location: ).*'".
-        format(" ".join(row["name"] for row in outdated)),
-        stdout=PIPE).stdout.splitlines()
+        "/site-packages".format(sys),
+    ], stdout=PIPE).stdout)
     owners = {}
-    for row, loc in zip(outdated, locs):
-        if loc == syswide_location:
-            pkgname, arch_version = _find_installed_name_version(
-                pep503_normalize_name(row["name"]))
-            # Check that pypi's version is indeed newer.  Some packages
-            # mis-report their version to pip (e.g., slicerator 0.9.7's Github
-            # release).
-            if arch_version.pkgver == row["latest_version"]:
-                LOGGER.warning(
-                    "pip thinks that %s is outdated, but the installed "
-                    "version is actually %s, and up-to-date.",
-                    row["name"], row["latest_version"])
-                continue
-            owners.setdefault(f"{pkgname} {arch_version}", []).append(row)
+    for row in outdated:
+        pkgname, arch_version = _find_installed_name_version(
+            pep503_normalize_name(row["name"]))
+        # Check that pypi's version is indeed newer.  Some packages mis-report
+        # their version to pip (e.g., slicerator 0.9.7's Github release).
+        if arch_version.pkgver == row["latest_version"]:
+            LOGGER.warning(
+                "pip thinks that %s is outdated, but the installed "
+                "version is actually %s, and up-to-date.",
+                row["name"], row["latest_version"])
+            continue
+        owners.setdefault(f"{pkgname} {arch_version}", []).append(row)
     owners = {k: v for k, v in sorted(owners.items())}
     rows = sum(owners.values(), [])
     name_len, ver_len, lver_len, lft_len = (
-        max(map(len, (row[key] for row in rows)))
+        max(map(len, (row[key] for row in rows)), default=0)
         for key in ["name", "version", "latest_version", "latest_filetype"])
     for owner, rows in owners.items():
         print(owner)

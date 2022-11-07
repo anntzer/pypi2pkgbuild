@@ -24,8 +24,5 @@ setup(
         "version_scheme": "post-release",
         "local_scheme": "node-and-date",
     },
-    # pypi2pkgbuild can technically be run without wheel, but any package build
-    # will ask to install it anyways.
-    install_requires=["pip>=10", "setuptools", "wheel"],
     scripts=["pypi2pkgbuild.py"],
 )
