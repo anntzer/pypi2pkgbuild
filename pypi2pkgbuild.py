@@ -9,6 +9,7 @@ from collections import namedtuple
 from contextlib import suppress
 from functools import lru_cache
 import hashlib
+import importlib.metadata
 from io import StringIO
 import json
 import logging
@@ -33,8 +34,8 @@ try:
         version_scheme="post-release", local_scheme="node-and-date")
 except (ImportError, LookupError):
     try:
-        __version__ = pkg_resources.get_distribution("pypi2pkgbuild").version
-    except pkg_resources.DistributionNotFound:
+        __version__ = importlib.metadata.version("pypi2pkgbuild")
+    except ModuleNotFoundError:
         __version__ = "(unknown version)"
 
 
