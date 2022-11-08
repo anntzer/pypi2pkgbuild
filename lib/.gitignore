@@ -1,0 +1,2 @@
+# This empty lib directory is used so that editable installs don't add the
+# toplevel directory to sys.path.
