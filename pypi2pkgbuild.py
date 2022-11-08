@@ -988,7 +988,7 @@ class Package(_BasePackage):
             else ref.orig_name,
             self._makedepends.pep503_names)
         self._depends = DependsTuple(
-            PackageRef(req)
+            PackageRef(req, pre=options.pre)
             if options.build_deps else
             # FIXME Could use something slightly better, i.e. still check local
             # packages...
