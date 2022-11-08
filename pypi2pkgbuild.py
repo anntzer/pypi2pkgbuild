@@ -329,6 +329,11 @@ def _run_shell(args, **kwargs):
     return cproc
 
 
+def _run_shell_stdout(args, **kwargs):
+    """Run a shell command and return its stdout."""
+    return _run_shell(args, **kwargs, stdout=PIPE).stdout
+
+
 @lru_cache()
 def _get_readonly_clean_venv():  # "readonly" is an intent, but not enforced.
     venv_dir = TemporaryDirectory()
@@ -565,8 +570,8 @@ def _get_metadata(name, setup_requires):
             more_requires_log=more_requires_log,
             log=log)
         try:
-            process = _run_shell(
-                script, stdout=PIPE, env={
+            out = _run_shell_stdout(
+                script, env={
                     # Matters, as a built wheel would get cached.
                     "CFLAGS": get_makepkg_conf()["CFLAGS"],
                     # Not actually used, per pypa/setuptools#1192.  Still
@@ -578,7 +583,7 @@ def _get_metadata(name, setup_requires):
             sys.stderr.write(log.read())
             raise PackagingError(f"Failed to obtain metadata for {name}.")
         more_requires = more_requires_log.read().splitlines()
-    metadata = {k.lower(): v for k, v in json.loads(process.stdout).items()}
+    metadata = {k.lower(): v for k, v in json.loads(out).items()}
     metadata["requires"] = [
         *(metadata["requires"].split(", ") if metadata["requires"] else []),
         *more_requires]
@@ -692,16 +697,16 @@ def _get_site_packages_location():
 
 def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
     parts = (
-        _run_shell(
+        _run_shell_stdout(
             "find . -maxdepth 1 -iname '%s[.-]*-info' "
             "-exec pacman -Qo '{}' \\; | rev | cut -d' ' -f1,2 | rev"
             % (to_wheel_name(pep503_name)
                # https://github.com/pypa/wheel/issues/440
                .replace("-", "[-.]").replace("_", "[_.]")),
-            cwd=_get_site_packages_location(), stdout=PIPE).stdout.split()
-        or _run_shell(
+            cwd=_get_site_packages_location()).split()
+        or _run_shell_stdout(
             f"pacman -Q python-{pep503_name} 2>/dev/null",
-            stdout=PIPE, check=False).stdout.split())
+            check=False).split())
     if parts:
         pkgname, version = parts  # This will raise if there is an ambiguity.
         if pkgname.endswith("-git"):
@@ -726,15 +731,15 @@ def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
 
 def _find_arch_name_version(pep503_name):
     for standalone in [True, False]:  # vendored into another Python package?
-        *candidates, = map(str.strip, _run_shell(
+        *candidates, = map(str.strip, _run_shell_stdout(
             "pkgfile -riv "
             "'^/usr/lib/python{version.major}\\.{version.minor}/{parent}"
             "{wheel_name}-.*py{version.major}\\.{version.minor}\\.egg-info' | "
             "cut -f1 | uniq | cut -d/ -f2".format(
                 parent="site-packages/" if standalone else "",
                 wheel_name=to_wheel_name(pep503_name),
-                version=sys.version_info),
-            stdout=PIPE).stdout.splitlines())
+                version=sys.version_info)
+        ).splitlines())
         if len(candidates) > 1:
             message = "Multiple candidates for {}: {}.".format(
                 pep503_name, ", ".join(candidates))
@@ -798,14 +803,14 @@ class PackageRef:
             pkgname, arch_version = installed or arch or default
             depname, _ = arch or installed or default
 
-        arch_packaged = sorted({*_run_shell(
-            "pkgfile -l {} 2>/dev/null | "
+        arch_packaged = sorted({*_run_shell_stdout(
+            f"pkgfile -l {pkgname} 2>/dev/null | "
             # Package name has no dash (per packaging standard) nor slashes
             # (which can occur when a subpackage is vendored (depending on how
             # it is done), e.g. `.../foo.egg-info` and `.../foo/bar.egg-info`
             # both existing).
-            r"grep -Po '(?<=site-packages/)[^-/]*(?=.*\.egg-info/?$)'".
-            format(pkgname), stdout=PIPE, check=False).stdout.splitlines()})
+            r"grep -Po '(?<=site-packages/)[^-/]*(?=.*\.egg-info/?$)'",
+            check=False).splitlines()})
 
         # Final values.
         vcs = _get_vcs(name)
@@ -892,14 +897,12 @@ class _BasePackage(ABC):
 
         def _get_fullpath():
             # This may be absolute and not in cwd (if PKGDEST is set).
-            return Path(_run_shell("makepkg --packagelist",
-                                   cwd=cwd, stdout=PIPE).stdout)
+            return Path(_run_shell_stdout("makepkg --packagelist", cwd=cwd))
 
         fullpath = _get_fullpath()
         # Update PKGBUILD.
         needs_rebuild = False
-        namcap = (_run_shell(["namcap", fullpath], cwd=cwd, stdout=PIPE)
-                  .stdout.splitlines())
+        namcap = _run_shell_stdout(["namcap", fullpath], cwd=cwd).splitlines()
         # `pkgver()` may update the PKGBUILD, so reread it.
         pkgbuild_contents = (cwd / "PKGBUILD").read_text()
         # Binary dependencies.
@@ -929,8 +932,8 @@ class _BasePackage(ABC):
             (cwd / "PKGBUILD").write_text(pkgbuild_contents)
             _run_shell("makepkg --force --repackage --nodeps", cwd=cwd)
             fullpath = _get_fullpath()
-        namcap_pkgbuild_report = _run_shell(
-            "namcap PKGBUILD", cwd=cwd, stdout=PIPE, check=False).stdout
+        namcap_pkgbuild_report = _run_shell_stdout(
+            "namcap PKGBUILD", cwd=cwd, check=False)
         # Suppressed namcap warnings (may be better to do this via a namcap
         # option?):
         # - Python dependencies always get misanalyzed; filter them away.
@@ -939,14 +942,14 @@ class _BasePackage(ABC):
         # - Extension modules unconditionally link to `libpthread` (see
         #   output of `python-config --libs`); filter that away.
         # - Extension modules appear to never be PIE?
-        namcap_package_report = _run_shell(
+        namcap_package_report = _run_shell_stdout(
             f"namcap {shlex.quote(str(fullpath))} | "
             f"grep -v \"^{self.pkgname} W: "
                 r"\(Dependency included and not needed"
                 r"\|Dependency .* included but already satisfied$"
                 r"\|Unused shared library '/usr/lib/libpthread\.so\.0' by"
                 r"\|ELF file .* lacks PIE\.$\)"
-            "\"", cwd=cwd, stdout=PIPE, check=False).stdout
+            "\"", cwd=cwd, check=False)
         namcap_report = [
             line for report in [namcap_pkgbuild_report, namcap_package_report]
             for line in report.split("\n") if line]
@@ -1117,10 +1120,10 @@ class Package(_BasePackage):
                 f"pkgver={self.pkgver}\n"
                 f"pkgrel={self.pkgrel}\n"
                 + self.get_pkgbuild_extras(options))
-            extra_makedepends = _run_shell(
+            extra_makedepends = _run_shell_stdout(
                 r"makepkg --printsrcinfo | "
                 r"grep -Po '(?<=^\tmakedepends = ).*'",
-                cwd=tmpdir, stdout=PIPE, check=False).stdout
+                cwd=tmpdir, check=False)
             if extra_makedepends:
                 self._makedepends = DependsTuple(
                     [*self._makedepends,
@@ -1135,11 +1138,11 @@ class Package(_BasePackage):
             if isinstance(pkg, PackageRef):
                 makedepends.append(pkg)
             elif isinstance(pkg, NonPyPackageRef):
-                pep503_name = _run_shell(
+                pep503_name = _run_shell_stdout(
                     f"pacman -Qql {pkg.pkgname} | "
                     f"grep -Po '(?<=^{_get_site_packages_location()}/)"
                     r"[^-]*(?=-.*\.(dist|egg)-info/$)'",
-                    stdout=PIPE, check=False).stdout
+                    check=False)
                 makedepends.append(
                     PackageRef(pep503_name) if pep503_name else pkg)
             else:
