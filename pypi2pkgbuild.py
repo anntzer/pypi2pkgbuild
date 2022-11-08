@@ -19,6 +19,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import site
 import subprocess
 from subprocess import CalledProcessError, PIPE
 import sys
@@ -680,12 +681,6 @@ def _get_info(name, *,
             " ".join(filter(None, [name, _version]))))
 
 
-def _get_site_packages_location():
-    return (
-        "{0.prefix}/lib/python{0.version_info.major}.{0.version_info.minor}"
-        "/site-packages".format(sys))
-
-
 # For _find_{installed,arch}_name_version:
 #   - first check for a matching `.{dist,egg}-info` file, ignoring case to
 #     handle e.g. `cycler` (pip) / `Cycler` (PyPI); also, there is usually a
@@ -703,7 +698,7 @@ def _find_installed_name_version(pep503_name, *, ignore_vendored=False):
             % (to_wheel_name(pep503_name)
                # https://github.com/pypa/wheel/issues/440
                .replace("-", "[-.]").replace("_", "[_.]")),
-            cwd=_get_site_packages_location()).split()
+            cwd=site.getsitepackages()[0]).split()
         or _run_shell_stdout(
             f"pacman -Q python-{pep503_name} 2>/dev/null",
             check=False).split())
@@ -859,7 +854,7 @@ class _BasePackage(ABC):
         # self._pkgbuild = ...
 
     @abc.abstractmethod
-    def write_deps_to(self, options):
+    def write_deps(self, options):
         pass
 
     def get_pkgbuild_extras(self, options):
@@ -874,7 +869,7 @@ class _BasePackage(ABC):
         else:
             return options.pkgbuild_extras
 
-    def write_to(self, options):
+    def write(self, options):
         cwd = options.base_path / self.pkgname
         cwd.mkdir(parents=True, exist_ok=options.force)
         (cwd / "PKGBUILD").write_text(self._pkgbuild)
@@ -1140,7 +1135,7 @@ class Package(_BasePackage):
             elif isinstance(pkg, NonPyPackageRef):
                 pep503_name = _run_shell_stdout(
                     f"pacman -Qql {pkg.pkgname} | "
-                    f"grep -Po '(?<=^{_get_site_packages_location()}/)"
+                    f"grep -Po '(?<=^{site.getsitepackages()[0]}/)"
                     r"[^-]*(?=-.*\.(dist|egg)-info/$)'",
                     check=False)
                 makedepends.append(
@@ -1277,7 +1272,7 @@ class Package(_BasePackage):
         else:
             return f"{name}={self.pkgver}"
 
-    def write_deps_to(self, options):
+    def write_deps(self, options):
         for ref in self._depends:
             if not ref.exists:
                 # Dependency not found, build it too.
@@ -1333,41 +1328,36 @@ class MetaPackage(_BasePackage):
     def _get_target_path(self, base_path):
         return base_path / ("meta:" + self._ref.pkgname)
 
-    def write_deps_to(self, options):
+    def write_deps(self, options):
         dep_options = options._replace(
             base_path=self._get_target_path(options.base_path),
             is_dep=True)
         for pkg in self._subpkgs:
-            pkg.write_deps_to(dep_options)
-            pkg.write_to(dep_options)
+            pkg.write_deps(dep_options)
+            pkg.write(dep_options)
 
-    def write_to(self, options):
-        super().write_to(options._replace(
+    def write(self, options):
+        super().write(options._replace(
             base_path=self._get_target_path(options.base_path)))
 
 
-def dispatch_package_builder(name, options):
+@lru_cache()
+def create_package(name, options):
     ref = PackageRef(
         name, pre=options.pre, guess_makedepends=options.guess_makedepends)
     if options.pkgname:
         ref.pkgname = options.pkgname
     cls = Package if len(ref.arch_packaged) <= 1 else MetaPackage
-    return cls(ref, options)
-
-
-@lru_cache()
-def create_package(name, options):
-    pkg = dispatch_package_builder(name, options)
+    pkg = cls(ref, options)
     if options.build_deps:
-        pkg.write_deps_to(options)
-    pkg.write_to(options)
+        pkg.write_deps(options)
+    pkg.write(options)
 
 
 def find_outdated():
     outdated = json.loads(_run_python([
         "-mpip", "list", "--outdated", "--format=json", "--path",
-        "{0.prefix}/lib/python{0.version_info.major}.{0.version_info.minor}"
-        "/site-packages".format(sys),
+        site.getsitepackages()[0],
     ], stdout=PIPE).stdout)
     owners = {}
     for row in outdated:
