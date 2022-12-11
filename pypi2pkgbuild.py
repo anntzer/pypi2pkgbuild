@@ -403,8 +403,11 @@ class WheelInfo(
     def get_arch_platforms(self):
         # any -> any
         # manylinuxXXX_{i686,x86_64}.manylinuxYYY_{...} -> {i686,x86_64}, {...}
-        return [platform.split("_", 1)[-1]
-                for platform in self.platform.split(".")]
+        def get_arch(platform):
+            cnt = max(platform.count("_") - 1, 1)
+            return platform.split("_", cnt)[-1]
+
+        return [get_arch(platform) for platform in self.platform.split(".")]
 
 
 # Copy-pasted from PEP503.
