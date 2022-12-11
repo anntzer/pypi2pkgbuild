@@ -403,8 +403,20 @@ class WheelInfo(
     def get_arch_platforms(self):
         # any -> any
         # manylinuxXXX_{i686,x86_64}.manylinuxYYY_{...} -> {i686,x86_64}, {...}
-        return [platform.split("_", 1)[-1]
-                for platform in self.platform.split(".")]
+        # No other wheel tags (e.g. windows/macos) reach this point because
+        # they are first filtered away by _filter_and_sort_urls.
+        platforms = []
+        regex = (
+            "(any)"
+            # https://peps.python.org/pep-0600/#package-indexes
+            "|manylinux1_(x86_64|i686)"
+            "|manylinux2010_(x86_64|i686)"
+            "|manylinux2014_(x86_64|i686|aarch64|armv7l|ppc64|ppc64le|s390x)"
+            "|manylinux_[0-9]+_[0-9]+_(.*)")
+        for part in self.platform.split("."):
+            platform, = filter(None, re.fullmatch(regex, part).groups())
+            platforms.append(platform)
+        return platforms
 
 
 # Copy-pasted from PEP503.
