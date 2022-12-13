@@ -1353,8 +1353,17 @@ class MetaPackage(_BasePackage):
             base_path=self._get_target_path(options.base_path)))
 
 
-@lru_cache()
+_CREATE_PACKAGE_CACHE = set()
+
+
 def create_package(name, options):
+    # This cannot use lru_cache because, in the case of mutually dependent
+    # packages, we want to prevent infinite recursion through write_deps (which
+    # is called *before* create_package returns, whereas lru_cache would only
+    # populate the cache *after* it returns).
+    if (name, options) in _CREATE_PACKAGE_CACHE:
+        return
+    _CREATE_PACKAGE_CACHE.add((name, options))
     ref = PackageRef(
         name, pre=options.pre, guess_makedepends=options.guess_makedepends)
     if options.pkgname:
