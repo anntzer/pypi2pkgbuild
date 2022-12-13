@@ -15,6 +15,8 @@ jobs:
         pacman -Syu --noconfirm &&
           pacman -S --noconfirm git namcap pkgfile python &&
           pkgfile --update &&
-          chmod -R a+w . &&
-          sudo -u nobody python -munittest
+          chmod -R a+rwx . &&
+          sudo -u nobody python -munittest &&
+          pacman -S --noconfirm cython rustup &&
+          sudo -u nobody python pypi2pkgbuild.py -vI --pre git+https://github.com/notofonts/notobuilder
         EOF
