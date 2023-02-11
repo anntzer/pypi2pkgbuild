@@ -909,7 +909,9 @@ class _BasePackage(ABC):
         fullpath = _get_fullpath()
         # Update PKGBUILD.
         needs_rebuild = False
-        namcap = _run_shell_stdout(["namcap", fullpath], cwd=cwd).splitlines()
+        # fullpath may not exist if --makepkg=--nobuild.
+        namcap = (_run_shell_stdout(["namcap", fullpath], cwd=cwd).splitlines()
+                  if fullpath.exists() else [])
         # `pkgver()` may update the PKGBUILD, so reread it.
         pkgbuild_contents = (cwd / "PKGBUILD").read_text()
         # Binary dependencies.
@@ -949,14 +951,16 @@ class _BasePackage(ABC):
         # - Extension modules unconditionally link to `libpthread` (see
         #   output of `python-config --libs`); filter that away.
         # - Extension modules appear to never be PIE?
-        namcap_package_report = _run_shell_stdout(
-            f"namcap {shlex.quote(str(fullpath))} | "
-            f"grep -v \"^{self.pkgname} W: "
-                r"\(Dependency included and not needed"
-                r"\|Dependency .* included but already satisfied$"
-                r"\|Unused shared library '/usr/lib/libpthread\.so\.0' by"
-                r"\|ELF file .* lacks PIE\.$\)"
-            "\"", cwd=cwd, check=False)
+        namcap_package_report = (
+            _run_shell_stdout(
+                f"namcap {shlex.quote(str(fullpath))} | "
+                f"grep -v \"^{self.pkgname} W: "
+                    r"\(Dependency included and not needed"
+                    r"\|Dependency .* included but already satisfied$"
+                    r"\|Unused shared library '/usr/lib/libpthread\.so\.0' by"
+                    r"\|ELF file .* lacks PIE\.$\)"
+                "\"", cwd=cwd, check=False)
+            if fullpath.exists() else "")
         namcap_report = [
             line for report in [namcap_pkgbuild_report, namcap_package_report]
             for line in report.split("\n") if line]
