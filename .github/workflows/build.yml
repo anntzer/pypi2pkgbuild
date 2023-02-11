@@ -12,9 +12,11 @@ jobs:
       run: |
         docker run --interactive --volume="$(pwd)":/io:Z --workdir=/io \
           archlinux/archlinux:base-devel bash <<EOF
+        echo 'en_US.UTF-8 UTF-8' >/etc/locale.gen && locale-gen &&
+        unset LANG && source /etc/profile.d/locale.sh &&
         pacman -Syu --noconfirm &&
-          pacman -S --noconfirm git namcap pkgfile python &&
-          pkgfile --update &&
-          chmod -R a+w . &&
-          sudo -u nobody python -munittest
+        pacman -S --noconfirm git namcap pkgfile python &&
+        pkgfile --update &&
+        chmod -R a+w . && mkdir -p /.cache/pip && chown nobody /.cache/pip &&
+        sudo -u nobody python -munittest
         EOF
