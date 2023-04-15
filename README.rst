@@ -1,6 +1,10 @@
 PyPI2PKGBUILD
 =============
 
+**NOTE**: This package is currently not under active development.
+
+-----
+
 |PyPI|
 
 .. |PyPI|
