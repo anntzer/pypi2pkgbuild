@@ -339,7 +339,9 @@ def _run_shell_stdout(args, **kwargs):
 def _get_readonly_clean_venv():  # "readonly" is an intent, but not enforced.
     venv_dir = TemporaryDirectory()
     _run_shell(["python", "-mvenv", venv_dir.name])
-    _run_shell([f"{venv_dir.name}/bin/pip", "install", "packaging"], stdout=DEVNULL)  # needed for version parsing
+    _run_shell([  # needed for version parsing
+        f"{venv_dir.name}/bin/pip", "install", "packaging"],
+        stdout=DEVNULL)
     return venv_dir  # Don't let venv_dir get GC'd.
 
 
@@ -905,8 +907,11 @@ class _BasePackage(ABC):
 
         def _get_fullpath():
             # This may be absolute and not in cwd (if PKGDEST is set).
-            # makepkg --packagelist may result in multiple lines when debug option is set, so take the first line.
-            return Path(_run_shell_stdout("makepkg --packagelist", cwd=cwd).splitlines()[0])
+            # --packagelist may output multiple lines when debug option is set.
+            # only take the first line (the main package).
+            return Path(_run_shell_stdout(
+                "makepkg --packagelist",
+                cwd=cwd).splitlines()[0])
 
         fullpath = _get_fullpath()
         # Update PKGBUILD.
