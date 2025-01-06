@@ -21,7 +21,7 @@ import shlex
 import shutil
 import site
 import subprocess
-from subprocess import CalledProcessError, PIPE
+from subprocess import CalledProcessError, PIPE, DEVNULL
 import sys
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 import textwrap
@@ -339,6 +339,9 @@ def _run_shell_stdout(args, **kwargs):
 def _get_readonly_clean_venv():  # "readonly" is an intent, but not enforced.
     venv_dir = TemporaryDirectory()
     _run_shell(["python", "-mvenv", venv_dir.name])
+    _run_shell([  # needed for version parsing
+        f"{venv_dir.name}/bin/pip", "install", "packaging"],
+        stdout=DEVNULL)
     return venv_dir  # Don't let venv_dir get GC'd.
 
 
@@ -667,7 +670,7 @@ def _get_info(name, *,
             if not request["releases"]:
                 raise PackagingError(f"No suitable release found for {name}.")
             src = ("from sys import argv; "
-                   "from pkg_resources import parse_version as pv; ")
+                   "from packaging.version import parse as pv; ")
             src += (
                 "print(sorted(argv[1:], key=pv))" if pre else
                 "print(sorted([v for v in argv[1:] if not pv(v).is_prerelease],"
@@ -904,7 +907,11 @@ class _BasePackage(ABC):
 
         def _get_fullpath():
             # This may be absolute and not in cwd (if PKGDEST is set).
-            return Path(_run_shell_stdout("makepkg --packagelist", cwd=cwd))
+            # --packagelist may output multiple lines when debug option is set.
+            # only take the first line (the main package).
+            return Path(_run_shell_stdout(
+                "makepkg --packagelist",
+                cwd=cwd).splitlines()[0])
 
         fullpath = _get_fullpath()
         # Update PKGBUILD.
@@ -1176,13 +1183,13 @@ class Package(_BasePackage):
                         {**TROVE_COMMON_LICENSES,
                          **TROVE_SPECIAL_LICENSES}[license_class])
                 except KeyError:
-                    licenses.append(f"custom:{license_class}")
+                    licenses.append(f"LicenseRef-{license_class}")
         # pypa/warehouse#3473: "UNKNOWN" -> "", but not for old pkgs.
         elif info["license"] not in [None, "", "UNKNOWN"]:
-            licenses.append("custom:{}".format(info["license"]))
+            licenses.append("LicenseRef-{}".format(info["license"]))
         else:
             LOGGER.warning("No license information available.")
-            licenses.append("custom:unknown")
+            licenses.append("LicenseRef-unknown")
 
         _license_found = False
         if any(license not in TROVE_COMMON_LICENSES for license in licenses):
